@@ -1,4 +1,4 @@
-# jbt
+# jbt: Journal Build Tool
 
 `jbt` is an early-stage, dbt-like data-ingestion pipeline for Plain Text Accounting. It is being designed as a reproducible build system for financial records: archived financial sources and versioned human decisions are turned into reproducible ledgers and other disposable outputs.
 
