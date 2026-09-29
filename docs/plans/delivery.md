@@ -13,11 +13,13 @@ Design shared identities, representations, boundaries, and invariants against th
 
 For example, a cash walking skeleton exercises the execution path. It cannot establish that a leg spanning two acquisition lots preserves transferred basis. Resolve that representation with exact expected rows and an independent reader before freezing it; implement automated lot selection in its later slice. Prove shared contracts broadly, then prove each processor before implementing its slice. This preserves cross-domain design validation without requiring every financial algorithm before the first pipeline.
 
-Plans name entry evidence, deliverables, and exit checks. Follow the [contract-first testing workflow](./tests.md#contract-first-slices) to distinguish representability, real boundary feasibility, and processor correctness. An unresolved feasibility question blocks the dependent commitment rather than silently narrowing the product.
+Plans name entry evidence, deliverables, and exit checks. Follow the [contract-first testing workflow](../developer/standards/tests.md#contract-first-slices) to distinguish representability, real boundary feasibility, and processor correctness. An unresolved feasibility question blocks the dependent commitment rather than silently narrowing the product.
 
 This plan owns implementation order. [Acceptance cases](../design/acceptance.md) owns the behavioral expectations.
 
 ## 0. Establish and exercise the full contract
+
+The [step-0 implementation plan](./step-0-contract-proof.md) sequences the work packages, dependency probes, fixture coverage, and verification needed to pass this gate.
 
 The design decisions establish intended semantics; they do not constitute an implemented or frozen schema. Complete the checks below before fixing durable identity/persistence APIs or treating a successful cash example as evidence of full representability.
 
