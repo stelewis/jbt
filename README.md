@@ -1,34 +1,35 @@
 # jbt: Journal Build Tool
 
-`jbt` is an early-stage, dbt-like data-ingestion pipeline for Plain Text Accounting. It is being designed as a reproducible build system for financial records: archived financial sources and versioned human decisions are turned into reproducible ledgers and other disposable outputs.
+A reproducible build system for financial records.
 
-The project is in pre-alpha development and is not ready for use with real financial records. The first release contains only foundational deterministic artifact utilities. It does not yet provide the `jbt` command or an ingestion pipeline.
+`jbt` turns archived financial sources and versioned human decisions into reproducible financial records. It brings build-system discipline to Plain Text Accounting: preserve source facts, reconcile statements, track corrections, and regenerate ledgers and other outputs from declared inputs.
 
-## Current scope
+## Installation
 
-The initial package provides internal core primitives for:
+<!--
+Replace this section with the shortest user-facing installation path.
+-->
 
-- canonical serialization without binary floating point;
-- deterministic SHA-256 content digests; and
-- versioned artifact envelopes.
+## Usage
 
-These foundations are intentionally small. User-facing formats and APIs will be added only as the design and synthetic corpus establish their contracts.
+The project is currently in pre-alpha development and is not ready for use with real financial records.
 
-## Development
+<!-- Replace this section with the shortest path to a useful run. -->
 
-The project is developed with Python 3.14 and supports Python 3.12 or later. With [uv](https://docs.astral.sh/uv/) installed:
+## Documentation
 
-```console
-uv sync --all-groups
-uv run pytest
-uv run ruff check .
-uv build
-uv run twine check dist/*
-```
+Start with [docs/index.md](docs/index.md).
+
+- [Quickstart](docs/user/quickstart.md)
+- [Project overview](docs/user/about.md)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks.
 
 ## Security
 
-Do not use real financial records in bug reports or public test cases. See [SECURITY.md](SECURITY.md) for private vulnerability reporting guidance.
+Do not use real financial records in bug reports or public test cases. Report security issues privately using [SECURITY.md](SECURITY.md).
 
 ## License
 

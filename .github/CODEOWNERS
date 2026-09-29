@@ -1,0 +1,21 @@
+# CODEOWNERS
+# Plaintext comment syntax only. Keep paths case-accurate.
+# Order matters: the last matching pattern wins, so keep broad rules above specific ones.
+
+* @stelewis
+
+# GitHub administration and automation
+/.github/ @stelewis
+/.github/workflows/ @stelewis
+/.github/actions/ @stelewis
+
+# Packaging and release metadata
+/pyproject.toml @stelewis
+/uv.lock @stelewis
+/CHANGELOG.md @stelewis
+/CHANGELOG.md.j2 @stelewis
+/SECURITY.md @stelewis
+
+# Keep CODEOWNERS itself owned by the configured repository owner.
+# This rule stays last so broader .github rules above cannot override it.
+/.github/CODEOWNERS @stelewis

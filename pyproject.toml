@@ -1,13 +1,12 @@
-[build-system]
-requires = ["uv_build>=0.12.9,<0.13"]
-build-backend = "uv_build"
-
 [project]
 name = "jbt"
 version = "0.1.0a1"
 description = "A reproducible build system for financial records"
 readme = "README.md"
-requires-python = ">=3.12"
+authors = [
+    { name = "Stephen Lewis", email = "31178492+stelewis@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 classifiers = [
@@ -15,31 +14,151 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Office/Business :: Financial :: Accounting",
+]
+dependencies = [
 ]
 
 [project.urls]
 Repository = "https://github.com/stelewis/jbt"
 Issues = "https://github.com/stelewis/jbt/issues"
 
-[tool.pytest.ini_options]
-addopts = "--strict-config --strict-markers"
-testpaths = ["tests"]
+[build-system]
+requires = ["uv_build>=0.12.19"]  # intentionally unbounded as a deliberate fail-fast choice
+build-backend = "uv_build"
 
-[tool.ruff]
-target-version = "py312"
-line-length = 88
+[tool.uv]
+preview-features = ["audit-command", "check-command", "malware-check"]
+required-version = ">=0.12.0"
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+[tool.uv.audit]
+malware-check = true
+
+[tool.uv.build-backend]
+module-name = "jbt"
 
 [dependency-groups]
 dev = [
-    "build>=1.3,<2",
-    "pytest>=8.4,<10",
-    "ruff>=0.12,<1",
-    "twine>=7,<8",
+    "bandit>=1.9.4",
+    "commitizen>=4.19.0",
+    "prek>=0.5.3",
+    "pytest>=9.1.1",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.16.9",
+    "tqlint>=0.12.0",
+    "ty>=0.0.84",
 ]
+
+[tool.ruff]
+line-length = 88
+src = ["src"]
+extend-exclude = ["tmp"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",  # ignore when using ruff format; see docs <https://docs.astral.sh/ruff/rules/missing-trailing-comma/#philosophy>.
+    "CPY001",  # Repository-level licensing replaces file-level copyright notices.
+    # "D100",  # Missing docstring in public module
+    # "D101",  # Missing docstring in public class
+    # "D102",  # Missing docstring in public method
+    # "D103",  # Missing docstring in public function
+    # "D104",  # Missing docstring in public package
+    # "D105",  # Missing docstring in magic method
+    # "D106",  # Missing docstring in public nested class
+]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "D",        # Test names and assertions document behavior better than documentation strings.
+    "INP001",   # Tests stay outside a package to avoid import shadowing.
+    "PLR2004",  # Magic value comparisons are fine in tests.
+    "S101",     # Pytest assertions are the intended test API.
+]
+
+[tool.ruff.lint.pylint]
+max-returns = 10
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+    "--strict-config",
+    "--strict-markers",
+    "-m",
+    "not e2e",
+]
+testpaths = ["tests"]
+markers = [
+    "e2e: mark end-to-end tests",
+    "golden: deterministic golden/snapshot fixture tests (offline)",
+    "integration: mark a test as an integration test",
+    "regression: mark tests that exercise known regressions",
+    "smoke: mark quick smoke tests",
+    "slow: mark slow tests that may be skipped in fast CI jobs",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "uv"
+version_scheme = "semver"
+update_changelog_on_bump = false
+changelog_file = "CHANGELOG.md"
+template = "CHANGELOG.md.j2"
+change_type_order = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
+gpg_sign = true
+major_version_zero = true
+
+[tool.commitizen.change_type_map]
+feat = "Added"
+fix = "Fixed"
+perf = "Changed"
+refactor = "Changed"
+docs = "Changed"
+chore = "Changed"
+build = "Changed"
+ci = "Changed"
+test = "Changed"
+style = "Changed"
+revert = "Changed"
+"breaking change" = "Changed"
+"BREAKING CHANGE" = "Changed"
+
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+]
+
+[tool.ty.src]
+exclude = [
+    "tmp/scripts/**",
+    ".agents/**",  # Installed third-party skill scripts are not project source.
+]
+
+[tool.tq]
+ignore = ["test-file-too-large"]
+init_modules = "ignore"
+qualifier_strategy = "allowlist"
+allowed_qualifiers = [
+    "fixtures_golden",
+    "fixtures_synthetic",
+    "regression",
+    "config",
+]
+
+[[tool.tq.targets]]
+name = "jbt"
+package = "jbt"
+source_root = "src"
+test_root = "tests"

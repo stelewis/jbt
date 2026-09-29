@@ -1,0 +1,25 @@
+name: Setup Python and uv
+description: Configure Python environment with uv
+
+inputs:
+  python-version:
+    description: Python version to install
+    required: false
+    default: "3.14"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        enable-cache: true
+
+    - name: Install dependencies
+      shell: bash
+      run: uv sync --locked

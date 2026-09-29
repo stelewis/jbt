@@ -2,53 +2,178 @@ name: CI
 
 on:
   push:
+    branches: [ "main" ]
   pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: Python ${{ matrix.python-version }}
+  commit-messages:
+    name: Commit messages (commitizen)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+    timeout-minutes: 1
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Check commit messages (pull_request)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: uv run --locked cz check --rev-range "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      - name: Check commit messages (push)
+        if: ${{ github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000' }}
+        run: |
+          BEFORE_SHA="${{ github.event.before }}"
+          HEAD_SHA="${{ github.sha }}"
+
+          git fetch --no-tags origin "$BEFORE_SHA" || true
+
+          if git rev-parse --verify --quiet "$BEFORE_SHA^{commit}" >/dev/null; then
+            uv run --locked cz check --rev-range "$BEFORE_SHA..$HEAD_SHA"
+          else
+            uv run --locked cz check --use-default-range
+          fi
+
+  hygiene:
+    name: Hygiene (pre-commit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Run hygiene hooks
+        run: >-
+          uv run --locked prek run --all-files
+          trailing-whitespace end-of-file-fixer check-yaml check-added-large-files
+
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install development dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --group dev
-          python -m pip install --no-deps --editable .
-      - name: Lint
-        run: python -m ruff check .
-      - name: Test
-        run: python -m pytest
+          persist-credentials: false
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Ruff format (check)
+        run: uv run --locked ruff format --check
+
+      - name: Ruff lint
+        run: uv run --locked ruff check --output-format=github
+
+  typecheck:
+    name: Type check (ty)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Run type checks
+        run: uv check --locked
+
+  tests:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Test quality
+        run: uv run --locked tq check
+
+      - name: Run tests
+        run: uv run --locked pytest -q
 
   package:
-    name: Package
+    name: Package distributions
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+  integration-tests:
+    name: Integration tests (pytest)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          python-version: "3.14"
-      - name: Build and check distributions
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install --group dev
-          python -m build
-          python -m twine check dist/*
+          persist-credentials: false
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Run integration tests
+        run: uv run --locked pytest -q -m integration
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+
+      - name: Scan repository history for secrets
+        run: uv run --locked prek run betterleaks-history --hook-stage manual
+
+      - name: Bandit
+        run: uv run --locked bandit --configfile pyproject.toml -r src
+
+      - name: Audit locked dependencies
+        run: uv audit --locked

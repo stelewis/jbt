@@ -1,0 +1,63 @@
+name: Pinned Actions Policy
+
+on:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/dependabot.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/**"
+      - ".github/actions/**"
+      - ".github/dependabot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  enforce-pinned-actions:
+    name: Enforce pinned action SHAs
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Validate all external action refs are SHA pinned
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fail=0
+          mapfile -t files < <(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml' '.github/actions/**/action.yml' '.github/actions/**/action.yaml')
+
+          for file in "${files[@]}"; do
+            while IFS=: read -r line_no line; do
+              ref="$(printf '%s\n' "$line" | sed -E "s/^[[:space:]-]*uses:[[:space:]]*['\"]?([^'\"[:space:]#]+).*/\1/")"
+
+              if [[ -z "$ref" ]]; then
+                continue
+              fi
+
+              if [[ "$ref" == ./* || "$ref" == docker://* ]]; then
+                continue
+              fi
+
+              if [[ "$ref" =~ @[a-f0-9]{40}$ ]]; then
+                continue
+              fi
+
+              echo "::error file=$file,line=$line_no::Action '$ref' must be pinned to a full commit SHA"
+              fail=1
+            done < <(grep -nE '^[[:space:]-]*uses:[[:space:]]*' "$file" || true)
+          done
+
+          if [[ "$fail" -ne 0 ]]; then
+            echo "One or more action references are not SHA pinned."
+            exit 1
+          fi

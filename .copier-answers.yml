@@ -1,0 +1,14 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 1.18.3
+_src_path: https://github.com/stelewis/template-python.git
+author_email: 31178492+stelewis@users.noreply.github.com
+author_name: Stephen Lewis
+description: A reproducible build system for financial records
+distribution_name: jbt
+enable_codeql: false
+github_codeowner: '@stelewis'
+github_repository: stelewis/jbt
+include_rulesets: false
+package_name: jbt
+product_name: jbt
+repository_name: jbt

@@ -1,0 +1,9 @@
+MD013: false
+  # tables: false
+
+MD024:
+  siblings_only: true
+
+MD025:
+  level: 1
+  front_matter_title: ""

@@ -1,0 +1,8 @@
+betterleaksMinVersion = "1.8.1"
+filter = '''
+attributes["path"] == ".pre-commit-config.yaml" &&
+filter.matchesAny(finding["line"], [`^\s*rev:\s*[0-9a-f]{40}\s+# frozen:`])
+'''
+
+[extend]
+useDefault = true

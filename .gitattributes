@@ -1,0 +1,38 @@
+# Normalize line endings and mark binaries
+* text=auto
+
+# Force LF for common source files
+*.py     text eol=lf
+*.md     text eol=lf
+*.rst    text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
+*.ini    text eol=lf
+*.sh     text eol=lf
+*.bat    text eol=crlf
+*.ps1    text eol=crlf
+
+# Lockfiles and build artifacts
+poetry.lock text eol=lf
+pyproject.toml text eol=lf
+
+# Treat common binary files as binary
+*.png    -text
+*.jpg    -text
+*.jpeg   -text
+*.gif    -text
+*.ico    -text
+*.pdf    -text
+*.zip    -text
+*.gz     -text
+*.tar    -text
+*.tar.gz -text
+*.xlsx   -text
+*.xls    -text
+
+# Ensure git-lfs-tracked files are not treated as text accidentally
+*.bin    -text
+
+# End of file

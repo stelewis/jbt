@@ -1,0 +1,41 @@
+{%- macro normalize_message(raw_message) -%}
+{%- set message = raw_message | trim -%}
+{%- if message -%}
+{%- set ns = namespace(normalized=message, capitalized=false) -%}
+{%- for char in message -%}
+{%- if not ns.capitalized and (char | lower) != (char | upper) -%}
+{%- set ns.normalized = message[:loop.index0] ~ (char | upper) ~ message[loop.index0 + 1:] -%}
+{%- set ns.capitalized = true -%}
+{%- endif -%}
+{%- endfor -%}
+{%- if ns.normalized[-1] not in ".!?" -%}
+{%- set ns.normalized = ns.normalized ~ "." -%}
+{%- endif -%}
+{{- ns.normalized -}}
+{%- endif -%}
+{%- endmacro -%}
+{%- for entry in tree -%}
+## [{{ entry.version }}]{% if entry.date %} - {{ entry.date }}{% endif %}
+{{ '\n' -}}
+
+{%- for change_key, changes in entry.changes.items() %}
+{% if change_key %}
+{{ '\n### ' ~ change_key ~ '\n\n' -}}
+{% endif %}
+{% for change in changes %}
+{% if change.message %}
+{% set message = normalize_message(change.message) | trim %}
+{% if message %}
+{% if change.scope %}
+- **{{ change.scope }}**: {{ message }}
+{% else %}
+- {{ message }}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if not loop.last %}
+
+{% endif %}
+{%- endfor %}

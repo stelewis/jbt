@@ -1,1 +1,1 @@
-"""Journal Build Tool."""
+"""jbt package."""

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Support
+    url: https://github.com/stelewis/jbt/blob/main/.github/SUPPORT.md
+    about: Read support options and reporting guidance.
+  - name: Security policy
+    url: https://github.com/stelewis/jbt/blob/main/SECURITY.md
+    about: Follow this process for security disclosures.
