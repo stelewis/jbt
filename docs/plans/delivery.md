@@ -19,7 +19,7 @@ This plan owns implementation order. [Acceptance cases](../design/acceptance.md)
 
 ## 0. Establish and exercise the full contract
 
-The [step-0 implementation plan](./step-0-contract-proof.md) sequences the work packages, dependency probes, fixture coverage, and verification needed to pass this gate.
+The implemented [contract foundations](../developer/architecture.md) and [conformance workflow](../developer/tools/local-workflows.md#contract-conformance) exercise this gate. The [executable coverage index](../../tests/integration/step_0/fixtures/index.json) distinguishes completed structural proofs from the processors still assigned to later delivery stages.
 
 The design decisions establish intended semantics; they do not constitute an implemented or frozen schema. Complete the checks below before fixing durable identity/persistence APIs or treating a successful cash example as evidence of full representability.
 
