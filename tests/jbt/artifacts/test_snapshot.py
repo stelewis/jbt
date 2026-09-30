@@ -247,6 +247,71 @@ def test_execution_only_facts_do_not_change_financial_identity(
     assert baseline.descriptor_digest != result.descriptor_digest
 
 
+def test_source_bindings_change_financial_identity(
+    tmp_path: Path,
+    settings: WriterSettings,
+    empty_record: SnapshotInput,
+) -> None:
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    baseline = assemble_snapshot(first, empty_record, settings)
+    changed = replace(
+        empty_record,
+        metadata={
+            **empty_record.metadata,
+            "bindings": [
+                {
+                    "entity_id": "E",
+                    "source_scope_id": "synthetic-source",
+                    "importer_id": "synthetic-importer",
+                    "account_mappings": [],
+                }
+            ],
+        },
+    )
+    result = assemble_snapshot(second, changed, settings)
+    assert baseline.financial_digest != result.financial_digest
+    assert baseline.manifest_digest != result.manifest_digest
+
+
+def test_binding_enumeration_does_not_change_financial_identity(
+    tmp_path: Path,
+    settings: WriterSettings,
+    empty_record: SnapshotInput,
+) -> None:
+    bindings = [
+        {
+            "entity_id": "E",
+            "source_scope_id": scope,
+            "importer_id": "synthetic-importer",
+            "account_mappings": [],
+        }
+        for scope in ("source-a", "source-b")
+    ]
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    baseline = assemble_snapshot(
+        first,
+        replace(
+            empty_record,
+            metadata={**empty_record.metadata, "bindings": bindings},
+        ),
+        settings,
+    )
+    reordered = assemble_snapshot(
+        second,
+        replace(
+            empty_record,
+            metadata={**empty_record.metadata, "bindings": list(reversed(bindings))},
+        ),
+        settings,
+    )
+    assert baseline.financial_digest == reordered.financial_digest
+    assert baseline.manifest_digest != reordered.manifest_digest
+
+
 def test_missing_required_check_prevents_descriptor(
     tmp_path: Path,
     settings: WriterSettings,

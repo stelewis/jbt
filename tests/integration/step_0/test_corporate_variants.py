@@ -4,7 +4,7 @@ from fractions import Fraction
 
 import pytest
 from tests.integration.step_0.corpus import load_case
-from tests.integration.step_0.reader import replay_rows, validate_rows
+from tests.integration.step_0.reader import ReaderError, replay_rows, validate_rows
 
 from jbt.contracts.catalog import schema_document
 from jbt.contracts.primitives import ContractError
@@ -107,6 +107,62 @@ def test_redenomination_is_not_a_display_alias() -> None:
     assert conversion["resulting_commodity_id"] == case.aliases["NEW"]
     assert _amount(conversion, "ratio_numerator") == 1
     assert _amount(conversion, "ratio_denominator") == 2
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "global",
+        "scoped_against_global",
+        "distinct_scopes",
+        "distinct_exchanges",
+        "adjacent",
+    ],
+)
+def test_symbol_lookup_cannot_resolve_to_two_instruments(scenario: str) -> None:
+    case = load_case("corporate-variants")
+    tables = deepcopy(case.tables)
+    original = next(
+        row for row in tables["commodity_symbols"] if row["symbol"] == "Q-\u00e9"
+    )
+    if scenario == "distinct_scopes":
+        original["source_scope_id"] = "custodian-a"
+    if scenario == "distinct_exchanges":
+        original["exchange"] = "X"
+    if scenario == "adjacent":
+        original["valid_to"] = "2026-06-01"
+    conflicting = deepcopy(original)
+    conflicting.update(
+        symbol_id="conflicting-symbol",
+        commodity_id=case.aliases["NEW"],
+        source_scope_id=(
+            "custodian-b"
+            if scenario == "distinct_scopes"
+            else "custodian-a"
+            if scenario == "scoped_against_global"
+            else original["source_scope_id"]
+        ),
+        exchange="Y" if scenario == "distinct_exchanges" else original["exchange"],
+        valid_from="2026-06-01" if scenario == "adjacent" else "2026-05-01",
+        valid_to=None,
+    )
+    tables["commodity_symbols"].append(conflicting)
+    tables["commodity_symbols"].sort(
+        key=lambda row: (
+            row["entity_id"],
+            row["commodity_id"],
+            row["valid_from"],
+            row["symbol_id"],
+        )
+    )
+    if scenario in {"global", "scoped_against_global"}:
+        with pytest.raises(ContractError, match="ambiguous_commodity_symbol"):
+            validate_tables(tables)
+        with pytest.raises(ReaderError, match="ambiguous commodity symbol"):
+            validate_rows(tables, schema_document())
+    else:
+        validate_tables(tables)
+        validate_rows(tables, schema_document())
 
 
 @pytest.mark.parametrize(

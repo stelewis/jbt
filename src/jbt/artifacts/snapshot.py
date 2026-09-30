@@ -423,11 +423,29 @@ def _financial_digest(
     metadata: Mapping[str, object],
     resources: Mapping[str, bytes],
 ) -> str:
+    source_bindings = metadata["bindings"]
+    if not isinstance(source_bindings, list):
+        msg = "validated source bindings must be a list"
+        raise TypeError(msg)
+    bindings = [
+        {
+            **binding,
+            "account_mappings": sorted(
+                binding["account_mappings"],
+                key=lambda mapping: encode_json(mapping, integer_strings=True),
+            ),
+        }
+        for binding in source_bindings
+    ]
     return byte_digest(
         encode_json(
             {
                 "entities": [[build.entity_id, build.as_of] for build in builds],
                 "schemas": schemas,
+                "bindings": sorted(
+                    bindings,
+                    key=lambda binding: encode_json(binding, integer_strings=True),
+                ),
                 "tables": [
                     {"name": item["name"], "logical_digest": item["logical_digest"]}
                     for item in entries

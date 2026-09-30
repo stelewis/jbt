@@ -87,6 +87,14 @@
       "implementation": "validate_tables"
     },
     {
+      "name": "commodity_symbol_resolution",
+      "owner": "publication",
+      "tables": [
+        "commodity_symbols"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
       "name": "lot_and_category_lineage",
       "owner": "publication",
       "tables": [

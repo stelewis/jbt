@@ -985,6 +985,31 @@ def _intervals(tables: Tables) -> None:
             )
 
 
+def _symbol_resolution(tables: Tables) -> None:
+    by_symbol = defaultdict(list)
+    for row in tables["commodity_symbols"]:
+        by_symbol[(row["entity_id"], row["symbol"])].append(row)
+    for symbols in by_symbol.values():
+        for index, left in enumerate(symbols):
+            for right in symbols[index + 1 :]:
+                if left["commodity_id"] == right["commodity_id"]:
+                    continue
+                if any(
+                    left[field] is not None
+                    and right[field] is not None
+                    and left[field] != right[field]
+                    for field in ("source_scope_id", "exchange")
+                ):
+                    continue
+                if (
+                    left["valid_to"] is None or right["valid_from"] < left["valid_to"]
+                ) and (
+                    right["valid_to"] is None or left["valid_from"] < right["valid_to"]
+                ):
+                    code = "ambiguous_commodity_symbol"
+                    raise ContractError(code, "commodity_symbols")
+
+
 def _statements(tables: Tables) -> None:
     for row in tables["statements"]:
         if row["source_class"] == "statement":
@@ -1941,6 +1966,7 @@ def validate_tables(tables: Tables) -> None:
     _balances(tables, indexes)
     _reference_shapes(tables, indexes)
     _intervals(tables)
+    _symbol_resolution(tables)
     _statements(tables)
     _commodities_and_actions(tables, indexes)
     _action_effects(tables)

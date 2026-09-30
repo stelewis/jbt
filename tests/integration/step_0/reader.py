@@ -629,6 +629,31 @@ def _validate_table(table: Row, rows: list[Row]) -> None:
     _require(keys == sorted(keys), f"wrong row ordering: {table['name']}")
 
 
+def _validate_symbol_resolution(tables: Tables) -> None:
+    by_symbol: dict[tuple[str, str], list[Row]] = defaultdict(list)
+    for row in tables["commodity_symbols"]:
+        by_symbol[(row["entity_id"], row["symbol"])].append(row)
+    for symbols in by_symbol.values():
+        for index, left in enumerate(symbols):
+            for right in symbols[index + 1 :]:
+                if left["commodity_id"] == right["commodity_id"]:
+                    continue
+                distinct_context = any(
+                    left[field] is not None
+                    and right[field] is not None
+                    and left[field] != right[field]
+                    for field in ("source_scope_id", "exchange")
+                )
+                concurrent = (
+                    left["valid_to"] is None or right["valid_from"] < left["valid_to"]
+                ) and (
+                    right["valid_to"] is None or left["valid_from"] < right["valid_to"]
+                )
+                _require(
+                    distinct_context or not concurrent, "ambiguous commodity symbol"
+                )
+
+
 def validate_rows(
     tables: Tables,
     schema: Row,
@@ -662,6 +687,7 @@ def validate_rows(
         all(row["entity_id"] in entities for rows in tables.values() for row in rows),
         "undeclared entity",
     )
+    _validate_symbol_resolution(tables)
     for entity in entities:
         _check_source_sequence_edges(
             tables, entity=entity, directions=source_sequence_directions or {}
@@ -1503,11 +1529,21 @@ def read_snapshot(
         expected_version=expected_version,
         source_sequence_directions=_sequence_directions(manifest, resources),
     )
+    bindings = [
+        {
+            **binding,
+            "account_mappings": sorted(
+                binding["account_mappings"], key=canonical_bytes
+            ),
+        }
+        for binding in manifest["bindings"]
+    ]
     financial = {
         "entities": [[row["entity_id"], row["as_of"]] for row in tables["build"]],
         "schemas": {
             name.removesuffix(".json"): documents[name] for name in sorted(SCHEMA_FILES)
         },
+        "bindings": sorted(bindings, key=canonical_bytes),
         "tables": [
             {"name": item["name"], "logical_digest": item["logical_digest"]}
             for item in manifest["tables"]
