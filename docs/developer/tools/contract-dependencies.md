@@ -19,7 +19,7 @@ Use the standard commands:
 ```bash
 uv sync --locked
 uv audit --locked
-uv run --locked pytest -q tests/integration/step_0
+uv run --locked pytest -q tests/integration/conformance
 ```
 
 No database server, dbt installation, Arrow flight service, remote filesystem, schema server, or Beancount plugin is required. A consumer reads versioned files rather than importing producer implementation code.

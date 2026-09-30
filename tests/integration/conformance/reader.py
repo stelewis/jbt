@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import duckdb
 from jsonschema import Draft202012Validator, ValidationError
-from tests.integration.step_0.consumer_arithmetic import read_number
+from tests.integration.conformance.consumer_arithmetic import read_number
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

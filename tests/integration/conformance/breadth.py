@@ -1,6 +1,6 @@
 """Cross-domain corpus selection; financial answers remain authored JSON."""
 
-from tests.integration.step_0.corpus import FixtureCase, load_case
+from tests.integration.conformance.corpus import FixtureCase, load_case
 
 FAMILIES = ("options", "claims", "obligations", "perpetual", "onchain")
 

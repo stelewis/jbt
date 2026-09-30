@@ -5,16 +5,16 @@ from hashlib import sha256
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import pytest
-from tests.integration.step_0.breadth import FAMILIES, family_cases
-from tests.integration.step_0.corpus import load_case as load_specimen
-from tests.integration.step_0.reader import ReaderError, replay_rows, validate_rows
+from tests.integration.conformance.breadth import FAMILIES, family_cases
+from tests.integration.conformance.corpus import load_case as load_specimen
+from tests.integration.conformance.reader import ReaderError, replay_rows, validate_rows
 
 from jbt.contracts.catalog import schema_document
 from jbt.contracts.declarations import validate_declaration
 from jbt.contracts.validation import ContractError, validate_tables
 
 if TYPE_CHECKING:
-    from tests.integration.step_0.reader import Row
+    from tests.integration.conformance.reader import Row
 
 
 class FamilyCase(Protocol):

@@ -6,7 +6,7 @@ from fractions import Fraction
 from hashlib import sha256
 
 import pytest
-from tests.integration.step_0.corpus import (
+from tests.integration.conformance.corpus import (
     FixtureCase,
     _Bundle,
     coverage_index,

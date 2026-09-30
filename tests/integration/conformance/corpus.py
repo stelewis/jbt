@@ -544,7 +544,7 @@ class _Bundle:
             manifest_digest=sha256(
                 ("fixture:" + self.spec["case_id"]).encode()
             ).hexdigest(),
-            producer_version="step-0-specimen",
+            producer_version="conformance-specimen",
             schema_version=1,
             schema_digest=sha256(_json(schema_document()).encode()).hexdigest(),
             as_of="2026-12-31",

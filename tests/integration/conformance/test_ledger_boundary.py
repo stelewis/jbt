@@ -8,7 +8,7 @@ from beancount import loader
 from beancount.core import convert, data
 from beancount.core.position import Cost
 from beancount.ops.validation import ValidationError
-from tests.integration.step_0.corpus import FixtureCase, fixture_cases, load_case
+from tests.integration.conformance.corpus import FixtureCase, fixture_cases, load_case
 
 from jbt.artifacts.beancount import (
     BeancountPolicy,

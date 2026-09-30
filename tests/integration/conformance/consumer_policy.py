@@ -12,7 +12,7 @@ from math import gcd
 from re import fullmatch
 from typing import TYPE_CHECKING
 
-from tests.integration.step_0.consumer_arithmetic import (
+from tests.integration.conformance.consumer_arithmetic import (
     Number,
     Ratio,
     add,
@@ -20,13 +20,17 @@ from tests.integration.step_0.consumer_arithmetic import (
     multiply,
     read_number,
 )
-from tests.integration.step_0.reader import project_quantities, replay_rows
+from tests.integration.conformance.reader import (
+    effective_posting_date,
+    project_quantities,
+    replay_rows,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from fractions import Fraction
 
-    from tests.integration.step_0.reader import Row, Tables
+    from tests.integration.conformance.reader import Row, Tables
 
 
 class PolicyError(ValueError):
@@ -802,8 +806,6 @@ def cash_performance(tables: Tables, policy: PerformancePolicy | None) -> Ratio:
         cutoff=policy.period.end,
         opening=True,
     )
-    from tests.integration.step_0.reader import effective_posting_date  # noqa: PLC0415
-
     observed = {}
     for posting in _rows(tables, "postings", entity):
         if posting["position_id"] not in eligible:

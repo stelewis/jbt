@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from tests.integration.step_0.corpus import load_case as load_specimen
-from tests.integration.step_0.reader import (
+from tests.integration.conformance.corpus import load_case as load_specimen
+from tests.integration.conformance.reader import (
     ReaderError,
     _sequence_directions,
     canonical_bytes,
@@ -48,8 +48,8 @@ SOURCE_SEQUENCE_DIRECTIONS = {
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from tests.integration.step_0.corpus import FixtureCase
-    from tests.integration.step_0.reader import ReplayResult, Row, Snapshot
+    from tests.integration.conformance.corpus import FixtureCase
+    from tests.integration.conformance.reader import ReplayResult, Row, Snapshot
 
 
 @dataclass(frozen=True)
@@ -1340,7 +1340,7 @@ class DenyProducer(importlib.abc.MetaPathFinder):
             raise ImportError("producer imports prohibited")
 sys.meta_path.insert(0, DenyProducer())
 from pathlib import Path
-from tests.integration.step_0.reader import read_snapshot, replay_rows
+from tests.integration.conformance.reader import read_snapshot, replay_rows
 snapshot = read_snapshot(
     Path(sys.argv[1]), descriptor_digest=sys.argv[2],
     expected_schema_digests=json.loads(sys.argv[3]),

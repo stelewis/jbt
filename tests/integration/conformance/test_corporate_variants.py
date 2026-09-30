@@ -3,8 +3,8 @@ from copy import deepcopy
 from fractions import Fraction
 
 import pytest
-from tests.integration.step_0.corpus import load_case
-from tests.integration.step_0.reader import ReaderError, replay_rows, validate_rows
+from tests.integration.conformance.corpus import load_case
+from tests.integration.conformance.reader import ReaderError, replay_rows, validate_rows
 
 from jbt.contracts.catalog import schema_document
 from jbt.contracts.primitives import ContractError

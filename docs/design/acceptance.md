@@ -256,6 +256,6 @@ The [analysis boundary](./analysis-boundary.md) owns consumer requirements. Its 
 
 ## Contract coverage
 
-The [step-0 handoff](../plans/delivery.md#0-establish-and-exercise-the-full-contract) summarizes the completed representation proof; the [coverage index](../../tests/integration/step_0/fixtures/index.json) maps this inventory to executable checks and later processor work. Later stages make the corresponding processors executable. Source acquisition can retain evidence before its processor is available; attempting to publish results that require that processor reports the missing capability.
+The [delivery plan](../plans/delivery.md#0-establish-and-exercise-the-full-contract) summarizes the completed representation proof; the [coverage index](../../tests/integration/conformance/fixtures/index.json) maps this inventory to executable checks and later processor work. Later stages make the corresponding processors executable. Source acquisition can retain evidence before its processor is available; attempting to publish results that require that processor reports the missing capability.
 
 Hand-calculate financial expectations, check conservation independently, vary input order, and include counterexamples where internally consistent output is still wrong. Update expected artifacts only after explaining the semantic change.

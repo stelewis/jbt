@@ -10,7 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-from tests.integration.step_0.consumer_arithmetic import (
+from tests.integration.conformance.consumer_arithmetic import (
     Number,
     NumericError,
     Ratio,

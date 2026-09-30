@@ -23,7 +23,7 @@ Use these commands during normal development before running the full quality gat
 Run the pure foundations, schema validators, artifact boundaries, and independent consumer together:
 
 ```bash
-uv run --locked pytest -q tests/jbt/domain tests/jbt/contracts tests/jbt/artifacts tests/integration/step_0
+uv run --locked pytest -q tests/jbt/domain tests/jbt/contracts tests/jbt/artifacts tests/integration/conformance
 ```
 
 These tests also run in the ordinary pytest suite; they are not behind the default-excluded `e2e` marker. The [implemented architecture](../architecture.md) explains what their evidence does and does not establish. Keep synthetic financial expectations independent of the algorithms being tested. The coverage gate requires zero unproven indexed obligations and a nonempty specimen for every table; every indexed case is published and independently verified rather than sampling only cash examples.

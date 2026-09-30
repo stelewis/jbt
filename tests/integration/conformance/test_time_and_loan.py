@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 from fractions import Fraction
 
 import pytest
-from tests.integration.step_0.corpus import FixtureCase, load_case
+from tests.integration.conformance.corpus import FixtureCase, load_case
 
 from jbt.contracts.catalog import catalog
 from jbt.contracts.declarations import validate_declaration

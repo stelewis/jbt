@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import pytest
-from tests.integration.step_0.consumer_arithmetic import Number, Ratio, multiply
-from tests.integration.step_0.consumer_policy import (
+from tests.integration.conformance.consumer_arithmetic import Number, Ratio, multiply
+from tests.integration.conformance.consumer_policy import (
     AccountBinding,
     Authority,
     BoundaryConvention,
@@ -45,14 +45,14 @@ from tests.integration.step_0.consumer_policy import (
     select_price,
     verify_handoff,
 )
-from tests.integration.step_0.corpus import FixtureCase, load_case
-from tests.integration.step_0.reader import read_snapshot
-from tests.integration.step_0.test_reader import _snapshot, approved_schemas
+from tests.integration.conformance.corpus import FixtureCase, load_case
+from tests.integration.conformance.reader import read_snapshot
+from tests.integration.conformance.test_reader import _snapshot, approved_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from tests.integration.step_0.reader import Tables
+    from tests.integration.conformance.reader import Tables
 
 pytestmark = [pytest.mark.integration, pytest.mark.golden]
 YEAR = Interval(date(2026, 1, 1), date(2027, 1, 1))

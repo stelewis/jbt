@@ -63,8 +63,8 @@ def test_domain_imports_only_pure_standard_library_and_domain() -> None:
 
 def test_independent_consumer_has_no_producer_import() -> None:
     paths = [
-        ROOT / "tests/integration/step_0/consumer_arithmetic.py",
-        ROOT / "tests/integration/step_0/reader.py",
+        ROOT / "tests/integration/conformance/consumer_arithmetic.py",
+        ROOT / "tests/integration/conformance/reader.py",
     ]
     for path in paths:
         tree = ast.parse(path.read_text())

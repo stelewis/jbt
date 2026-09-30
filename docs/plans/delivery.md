@@ -13,19 +13,19 @@ Design shared identities and invariants against the intended capability set, the
 
 ## 0. Establish and exercise the full contract
 
-Step 0 established exact values and identities, versioned schemas, complete static artifacts, real numeric/Parquet/Beancount boundary checks, hand-calculated cross-domain fixtures, and independent replay. See the [implemented contract foundations](../developer/architecture.md), [conformance workflow](../developer/tools/local-workflows.md#contract-conformance), and [coverage index](../../tests/integration/step_0/fixtures/index.json) for evidence and later processor ownership.
+Step 0 established exact values and identities, versioned schemas, complete static artifacts, real numeric/Parquet/Beancount boundary checks, hand-calculated cross-domain fixtures, and independent replay. See the [implemented contract foundations](../developer/architecture.md), [conformance workflow](../developer/tools/local-workflows.md#contract-conformance), and [coverage index](../../tests/integration/conformance/fixtures/index.json) for evidence and later processor ownership.
 
 These hand-authored results prove representability and boundary feasibility, not extraction, booking, action processing, or durable publication. Schema version 1 is a working baseline, not a compatibility promise or an approval mechanism for the ultimate design: when a processor exposes a missing fact or flawed representation, revise the owning contract and independent expectations together instead of preserving the seed through a shim. Do not retain a bad shape for inputs that are not supported as durable external contracts.  A snapshot digest identifies its contents; it does not certify that the design is right.
 
 ## Gate for each processor slice
 
-Before implementing a processor, extend the shared fixtures with its positive, negative, and boundary cases and resolve the expected transformations under the [contract-first workflow](../developer/standards/tests.md#contract-first-slices). A missing field, ambiguous policy, or impossible independent reconstruction blocks that slice until the owning contract is repaired, not until a workaround preserves the step-0 baseline.
+Before implementing a processor, extend the conformance fixtures with its positive, negative, and boundary cases and resolve the expected transformations under the [contract-first workflow](../developer/standards/tests.md#contract-first-slices). A missing field, ambiguous policy, or impossible independent reconstruction blocks that slice until the owning contract is repaired, not until a workaround preserves the shared contract.
 
-The slice exits only when its processor produces those results through the real model and configured outputs. Reuse the step-0 fixtures as end-to-end expectations; do not replace them with self-generated snapshots. Unimplemented families remain explicitly unsupported by that runtime even though their representation passed step 0.
+The slice exits only when its processor produces those results through the real model and configured outputs. Reuse the conformance fixtures as end-to-end expectations; do not replace them with self-generated snapshots. Unimplemented families remain explicitly unsupported by that runtime even though their representation passed the conformance checks.
 
 ## 1. Build the reproducible execution path
 
-Start from the values and schemas exercised in step 0. Implement versioned envelopes, retained input snapshots, and execution/content identities. Enforce dependency direction and guard against undeclared runtime inputs.
+Start from the values and schemas exercised by the conformance suite. Implement versioned envelopes, retained input snapshots, and execution/content identities. Enforce dependency direction and guard against undeclared runtime inputs.
 
 Add non-destructive acquisition, immutable objects, accession/binding records, and recoverable writes. Execute the fixed stage dependencies sequentially, using integrity-checked artifacts for content-based reuse. Add staged publication and uncached verification against an unchanged baseline.
 
@@ -63,7 +63,7 @@ Implement the on-chain families in the acceptance inventory: separately paid net
 
 ## 5. Build reference analysis and consolidation
 
-Promote the step-0 reader checks into reference staging and deterministic intermediates against published Parquet snapshots. Add declaration resolution and tests at the same time as the first dependent model. Replay recorded allocations and reference changes; do not repeat upstream booking. Use the analytical contract's arithmetic, lineage, and snapshot rules without importing pipeline types.
+Promote the independent reader checks into reference staging and deterministic intermediates against published Parquet snapshots. Add declaration resolution and tests at the same time as the first dependent model. Replay recorded allocations and reference changes; do not repeat upstream booking. Use the analytical contract's arithmetic, lineage, and snapshot rules without importing pipeline types.
 
 Implement multi-entity correspondence, shared-account authority intervals, invested-feed continuity, ownership attribution, and internal-flow treatment. Add valuation, FX, and performance models with explicit policies and missing-data outcomes.
 
