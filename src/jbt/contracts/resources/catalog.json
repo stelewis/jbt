@@ -1,0 +1,1155 @@
+{
+  "schema_version": 1,
+  "foreign_keys": {
+    "postings": {
+      "txn_id": "transactions", "commodity_id": "commodities",
+      "account_id": "accounts", "category_id": "categories", "step_id": "book_steps",
+      "position_id": "positions", "price_commodity_id": "commodities",
+      "original_commodity_id": "commodities", "fx_base_commodity_id": "commodities",
+      "fx_quote_commodity_id": "commodities"
+    },
+    "book_steps": {"txn_id": "transactions"},
+    "book_step_dependencies": {
+      "before_step_id": "book_steps", "after_step_id": "book_steps",
+      "declaration_id": "declarations"
+    },
+    "posting_weights": {"posting_id": "postings", "commodity_id": "commodities"},
+    "positions": {
+      "declaration_id": "declarations", "account_id": "accounts",
+      "commodity_id": "commodities", "counterparty_id": "counterparties",
+      "terms_declaration_id": "declarations"
+    },
+    "lots": {
+      "commodity_id": "commodities", "creation_step_id": "book_steps",
+      "origin_posting_id": "postings", "parent_lot_id": "lots",
+      "book_commodity_id": "commodities"
+    },
+    "opening_lots": {"lot_id": "lots", "declaration_id": "declarations"},
+    "inventory_pools": {
+      "position_id": "positions", "declaration_id": "declarations",
+      "book_commodity_id": "commodities"
+    },
+    "inventory_allocations": {
+      "step_id": "book_steps", "method_declaration_id": "declarations",
+      "action_id": "corporate_actions"
+    },
+    "inventory_changes": {
+      "allocation_id": "inventory_allocations", "posting_id": "postings",
+      "position_id": "positions", "lot_id": "lots", "pool_id": "inventory_pools"
+    },
+    "component_conversions": {
+      "allocation_id": "inventory_allocations", "source_commodity_id": "commodities",
+      "target_commodity_id": "commodities", "method_declaration_id": "declarations"
+    },
+    "disposals": {
+      "allocation_id": "inventory_allocations", "proceeds_commodity_id": "commodities",
+      "fee_attribution_declaration_id": "declarations"
+    },
+    "fee_allocations": {
+      "fee_posting_id": "postings", "opening_declaration_id": "declarations",
+      "commodity_id": "commodities", "book_commodity_id": "commodities",
+      "method_declaration_id": "declarations"
+    },
+    "inventory_fee_changes": {
+      "change_id": "inventory_changes", "fee_allocation_id": "fee_allocations"
+    },
+    "reference_changes": {
+      "step_id": "book_steps", "position_id": "positions", "lot_id": "lots",
+      "reference_commodity_id": "commodities", "terms_declaration_id": "declarations"
+    },
+    "reference_settlements": {
+      "reference_change_id": "reference_changes", "settlement_posting_id": "postings",
+      "commodity_id": "commodities"
+    },
+    "assertion_scopes": {"account_id": "accounts", "declaration_id": "declarations"},
+    "balance_assertions": {"scope_id": "assertion_scopes", "statement_id": "statements"},
+    "balances": {
+      "assertion_set_id": "balance_assertions", "position_id": "positions",
+      "commodity_id": "commodities"
+    },
+    "prices": {"commodity_id": "commodities", "quote_commodity_id": "commodities"},
+    "corporate_actions": {"commodity_id": "commodities", "txn_id": "transactions"},
+    "corporate_action_effects": {
+      "action_id": "corporate_actions", "input_commodity_id": "commodities",
+      "resulting_commodity_id": "commodities", "cash_commodity_id": "commodities",
+      "basis_commodity_id": "commodities", "symbol_id": "commodity_symbols",
+      "scope_declaration_id": "declarations"
+    },
+    "action_applications": {"effect_id": "corporate_action_effects", "step_id": "book_steps"},
+    "accounts": {"declaration_id": "declarations", "operating_commodity_id": "commodities"},
+    "categories": {"declaration_id": "declarations", "parent_category_id": "categories"},
+    "commodities": {"quote_commodity_id": "commodities", "terms_declaration_id": "declarations"},
+    "counterparties": {"declaration_id": "declarations"},
+    "commodity_symbols": {"commodity_id": "commodities"},
+    "statements": {"account_id": "accounts", "declaration_id": "declarations"},
+    "source_records": {"statement_id": "statements"},
+    "economic_identities": {"decision_declaration_id": "declarations"},
+    "observations": {
+      "commodity_id": "commodities", "source_record_id": "source_records",
+      "declaration_id": "declarations"
+    },
+    "links": {"terms_declaration_id": "declarations"}
+  },
+  "numeric_limits": {
+    "coefficient_digits": 96,
+    "scale": 38,
+    "source_scale": 38,
+    "intermediate_digits": 384,
+    "intermediate_scale": 152
+  },
+  "bundles": {
+    "dates": {
+      "date_authorized": "date?",
+      "date_traded": "date?",
+      "date_posted": "date?",
+      "date_settled": "date?",
+      "date_value": "date?"
+    },
+    "date_modes": {
+      "date_authorized_mode": "string",
+      "date_traded_mode": "string",
+      "date_posted_mode": "string",
+      "date_settled_mode": "string",
+      "date_value_mode": "string"
+    },
+    "time": {
+      "timestamp_date": "date?",
+      "timestamp_local": "string?",
+      "timestamp_offset_minutes": "integer?",
+      "timestamp_zone": "string?",
+      "timestamp_precision": "string?",
+      "timestamp_fraction_digits": "integer?"
+    }
+  },
+  "tables": [
+    {
+      "name": "transactions",
+      "primary_key": [
+        "txn_id"
+      ],
+      "sort_key": [
+        "date_posted",
+        "txn_id"
+      ],
+      "bundles": [
+        "dates"
+      ],
+      "fields": {
+        "txn_id": "string",
+        "event_kind": "string",
+        "event_state": "string",
+        "payee": "string?",
+        "narration": "string?",
+        "description_as_stated": "string?",
+        "review_state": "string",
+        "tags": "list",
+        "links": "list"
+      }
+    },
+    {
+      "name": "postings",
+      "primary_key": [
+        "posting_id"
+      ],
+      "sort_key": [
+        "txn_id",
+        "posting_index",
+        "posting_id"
+      ],
+      "unique": [
+        [
+          "txn_id",
+          "posting_index"
+        ]
+      ],
+      "bundles": [
+        "dates",
+        "date_modes"
+      ],
+      "fields": {
+        "posting_id": "string",
+        "posting_index": "integer",
+        "txn_id": "string",
+        "commodity_id": "string",
+        "amount": "decimal",
+        "account_id": "string?",
+        "category_id": "string?",
+        "step_id": "string?",
+        "posting_role": "string",
+        "leg_kind": "string",
+        "position_id": "string?",
+        "symbol_as_stated": "string?",
+        "broker_lot_id": "string?",
+        "price_per_unit": "decimal?",
+        "price_commodity_id": "string?",
+        "original_amount": "decimal?",
+        "original_commodity_id": "string?",
+        "fx_rate_as_stated": "decimal?",
+        "fx_base_commodity_id": "string?",
+        "fx_quote_commodity_id": "string?"
+      }
+    },
+    {
+      "name": "event_times",
+      "primary_key": [
+        "record_kind",
+        "record_id",
+        "date_role"
+      ],
+      "bundles": [
+        "time"
+      ],
+      "fields": {
+        "record_kind": "string",
+        "record_id": "string",
+        "date_role": "string",
+        "time_mode": "string"
+      }
+    },
+    {
+      "name": "book_steps",
+      "primary_key": [
+        "step_id"
+      ],
+      "sort_key": [
+        "sequence",
+        "step_id"
+      ],
+      "unique": [
+        [
+          "sequence"
+        ],
+        [
+          "txn_id",
+          "step_key"
+        ]
+      ],
+      "bundles": [
+        "time"
+      ],
+      "fields": {
+        "step_id": "string",
+        "txn_id": "string",
+        "step_key": "string",
+        "sequence": "integer",
+        "operation_kind": "string",
+        "effective_date": "date"
+      }
+    },
+    {
+      "name": "book_step_dependencies",
+      "primary_key": [
+        "before_step_id",
+        "after_step_id",
+        "constraint_kind"
+      ],
+      "fields": {
+        "before_step_id": "string",
+        "after_step_id": "string",
+        "constraint_kind": "string",
+        "declaration_id": "string?"
+      }
+    },
+    {
+      "name": "posting_weights",
+      "primary_key": [
+        "posting_id",
+        "component_key"
+      ],
+      "fields": {
+        "posting_id": "string",
+        "component_key": "string",
+        "weight_kind": "string",
+        "amount": "decimal",
+        "commodity_id": "string"
+      }
+    },
+    {
+      "name": "positions",
+      "primary_key": [
+        "position_id"
+      ],
+      "fields": {
+        "position_id": "string",
+        "declaration_id": "string",
+        "account_id": "string",
+        "commodity_id": "string",
+        "position_kind": "string",
+        "counterparty_id": "string?",
+        "measurement_kind": "string",
+        "inventory_method": "string",
+        "purpose": "string",
+        "terms_declaration_id": "string?"
+      }
+    },
+    {
+      "name": "lots",
+      "primary_key": [
+        "lot_id"
+      ],
+      "fields": {
+        "lot_id": "string",
+        "commodity_id": "string",
+        "creation_step_id": "string",
+        "origin_posting_id": "string?",
+        "parent_lot_id": "string?",
+        "origin_key": "string",
+        "acquisition_date": "date?",
+        "book_commodity_id": "string?"
+      }
+    },
+    {
+      "name": "opening_lots",
+      "primary_key": [
+        "lot_id"
+      ],
+      "fields": {
+        "lot_id": "string",
+        "declaration_id": "string",
+        "broker_lot_id": "string?"
+      }
+    },
+    {
+      "name": "inventory_pools",
+      "primary_key": [
+        "pool_id"
+      ],
+      "fields": {
+        "pool_id": "string",
+        "position_id": "string",
+        "declaration_id": "string",
+        "book_commodity_id": "string"
+      }
+    },
+    {
+      "name": "inventory_allocations",
+      "primary_key": [
+        "allocation_id"
+      ],
+      "fields": {
+        "allocation_id": "string",
+        "step_id": "string",
+        "allocation_kind": "string",
+        "method_declaration_id": "string",
+        "action_id": "string?"
+      }
+    },
+    {
+      "name": "inventory_changes",
+      "primary_key": [
+        "change_id"
+      ],
+      "fields": {
+        "change_id": "string",
+        "allocation_id": "string",
+        "change_role": "string",
+        "posting_id": "string",
+        "position_id": "string",
+        "lot_id": "string?",
+        "pool_id": "string?",
+        "units_delta": "decimal",
+        "principal_delta": "decimal?",
+        "capitalized_fee_delta": "decimal?",
+        "expensed_fee_delta": "decimal?"
+      }
+    },
+    {
+      "name": "component_conversions",
+      "primary_key": [
+        "allocation_id",
+        "component_kind"
+      ],
+      "fields": {
+        "allocation_id": "string",
+        "component_kind": "string",
+        "source_amount": "decimal",
+        "source_commodity_id": "string",
+        "target_amount": "decimal",
+        "target_commodity_id": "string",
+        "rate": "decimal",
+        "method_declaration_id": "string"
+      }
+    },
+    {
+      "name": "disposals",
+      "primary_key": [
+        "disposal_id"
+      ],
+      "unique": [
+        [
+          "allocation_id"
+        ]
+      ],
+      "fields": {
+        "disposal_id": "string",
+        "allocation_id": "string",
+        "proceeds_total": "decimal?",
+        "proceeds_commodity_id": "string?",
+        "disposal_fees_total": "decimal?",
+        "fee_attribution_declaration_id": "string"
+      }
+    },
+    {
+      "name": "fee_allocations",
+      "primary_key": [
+        "fee_allocation_id"
+      ],
+      "fields": {
+        "fee_allocation_id": "string",
+        "fee_posting_id": "string?",
+        "opening_declaration_id": "string?",
+        "target_kind": "string",
+        "target_id": "string",
+        "amount": "decimal",
+        "commodity_id": "string",
+        "book_amount": "decimal?",
+        "book_commodity_id": "string?",
+        "treatment": "string",
+        "method_declaration_id": "string"
+      }
+    },
+    {
+      "name": "inventory_fee_changes",
+      "primary_key": [
+        "change_id",
+        "fee_allocation_id"
+      ],
+      "fields": {
+        "change_id": "string",
+        "fee_allocation_id": "string",
+        "amount_delta": "decimal",
+        "book_amount_delta": "decimal?"
+      }
+    },
+    {
+      "name": "reference_changes",
+      "primary_key": [
+        "reference_change_id"
+      ],
+      "fields": {
+        "reference_change_id": "string",
+        "step_id": "string",
+        "position_id": "string",
+        "lot_id": "string",
+        "change_kind": "string",
+        "units": "decimal",
+        "reference_before": "decimal?",
+        "reference_after": "decimal?",
+        "settlement_reference": "decimal?",
+        "reference_commodity_id": "string",
+        "terms_declaration_id": "string"
+      }
+    },
+    {
+      "name": "reference_settlements",
+      "primary_key": [
+        "reference_change_id",
+        "settlement_posting_id"
+      ],
+      "fields": {
+        "reference_change_id": "string",
+        "settlement_posting_id": "string",
+        "amount": "decimal",
+        "commodity_id": "string"
+      }
+    },
+    {
+      "name": "assertion_scopes",
+      "primary_key": [
+        "scope_id"
+      ],
+      "fields": {
+        "scope_id": "string",
+        "account_id": "string",
+        "declaration_id": "string",
+        "scope_kind": "string",
+        "measurement": "string",
+        "coverage_basis": "string",
+        "selection": "string",
+        "position_ids": "list"
+      }
+    },
+    {
+      "name": "balance_assertions",
+      "primary_key": [
+        "assertion_set_id"
+      ],
+      "sort_key": [
+        "scope_id",
+        "date",
+        "assertion_set_id"
+      ],
+      "bundles": [
+        "time"
+      ],
+      "fields": {
+        "assertion_set_id": "string",
+        "scope_id": "string",
+        "date": "date",
+        "assertion_kind": "string",
+        "is_complete": "boolean",
+        "statement_id": "string?"
+      }
+    },
+    {
+      "name": "balances",
+      "primary_key": [
+        "balance_id"
+      ],
+      "sort_key": [
+        "assertion_set_id",
+        "position_id",
+        "commodity_id",
+        "balance_id"
+      ],
+      "fields": {
+        "balance_id": "string",
+        "assertion_set_id": "string",
+        "position_id": "string?",
+        "commodity_id": "string",
+        "amount": "decimal"
+      }
+    },
+    {
+      "name": "prices",
+      "primary_key": [
+        "price_id"
+      ],
+      "sort_key": [
+        "commodity_id",
+        "quote_commodity_id",
+        "date",
+        "price_id"
+      ],
+      "bundles": [
+        "time"
+      ],
+      "fields": {
+        "price_id": "string",
+        "commodity_id": "string",
+        "quote_commodity_id": "string",
+        "date": "date",
+        "rate": "decimal",
+        "basis": "string?",
+        "origin": "string",
+        "market": "string?"
+      }
+    },
+    {
+      "name": "corporate_actions",
+      "primary_key": [
+        "action_id"
+      ],
+      "sort_key": [
+        "effective_date",
+        "action_id"
+      ],
+      "bundles": [
+        "time"
+      ],
+      "fields": {
+        "action_id": "string",
+        "action_kind": "string",
+        "commodity_id": "string",
+        "effective_date": "date",
+        "announcement_date": "date?",
+        "record_date": "date?",
+        "payment_date": "date?",
+        "txn_id": "string"
+      }
+    },
+    {
+      "name": "corporate_action_effects",
+      "primary_key": [
+        "effect_id"
+      ],
+      "sort_key": [
+        "action_id",
+        "effect_index",
+        "effect_id"
+      ],
+      "unique": [
+        [
+          "action_id",
+          "effect_key"
+        ],
+        [
+          "action_id",
+          "effect_index"
+        ]
+      ],
+      "fields": {
+        "effect_id": "string",
+        "action_id": "string",
+        "effect_key": "string",
+        "effect_index": "integer",
+        "effect_kind": "string",
+        "input_commodity_id": "string",
+        "resulting_commodity_id": "string?",
+        "ratio_numerator": "decimal?",
+        "ratio_denominator": "decimal?",
+        "cash_per_unit": "decimal?",
+        "cash_total": "decimal?",
+        "cash_commodity_id": "string?",
+        "basis_per_unit": "decimal?",
+        "basis_total": "decimal?",
+        "basis_commodity_id": "string?",
+        "symbol_id": "string?",
+        "scope_declaration_id": "string?"
+      }
+    },
+    {
+      "name": "action_applications",
+      "primary_key": [
+        "effect_id",
+        "target_kind",
+        "target_id"
+      ],
+      "fields": {
+        "effect_id": "string",
+        "target_kind": "string",
+        "target_id": "string",
+        "step_id": "string",
+        "application_role": "string"
+      }
+    },
+    {
+      "name": "accounts",
+      "primary_key": [
+        "account_id"
+      ],
+      "fields": {
+        "account_id": "string",
+        "declaration_id": "string",
+        "institution": "string?",
+        "opened_date": "date?",
+        "closed_date": "date?",
+        "operating_commodity_id": "string?",
+        "statements_expected": "boolean",
+        "statement_cadence": "string?",
+        "civil_zone": "string?",
+        "coverage_start_date": "date?"
+      }
+    },
+    {
+      "name": "categories",
+      "primary_key": [
+        "category_id"
+      ],
+      "fields": {
+        "category_id": "string",
+        "declaration_id": "string",
+        "name": "string",
+        "category_type": "string",
+        "parent_category_id": "string?"
+      }
+    },
+    {
+      "name": "commodities",
+      "primary_key": [
+        "commodity_id"
+      ],
+      "fields": {
+        "commodity_id": "string",
+        "name": "string?",
+        "commodity_kind": "string",
+        "isin": "string?",
+        "cusip": "string?",
+        "quote_commodity_id": "string?",
+        "contract_multiplier": "decimal?",
+        "terms_declaration_id": "string?",
+        "display_precision": "integer?"
+      }
+    },
+    {
+      "name": "counterparties",
+      "primary_key": [
+        "counterparty_id"
+      ],
+      "fields": {
+        "counterparty_id": "string",
+        "name": "string",
+        "declaration_id": "string"
+      }
+    },
+    {
+      "name": "commodity_symbols",
+      "primary_key": [
+        "symbol_id"
+      ],
+      "sort_key": [
+        "commodity_id",
+        "valid_from",
+        "symbol_id"
+      ],
+      "fields": {
+        "symbol_id": "string",
+        "commodity_id": "string",
+        "symbol": "string",
+        "source_scope_id": "string?",
+        "exchange": "string?",
+        "valid_from": "date",
+        "valid_to": "date?"
+      }
+    },
+    {
+      "name": "statements",
+      "primary_key": [
+        "statement_id"
+      ],
+      "sort_key": [
+        "account_id",
+        "period_start",
+        "statement_id"
+      ],
+      "fields": {
+        "statement_id": "string",
+        "account_id": "string",
+        "institution": "string?",
+        "source_class": "string",
+        "period_start": "date?",
+        "period_end": "date?",
+        "stated_currency": "string?",
+        "source_format": "string",
+        "is_eclipsed": "boolean",
+        "coverage_basis": "string",
+        "declaration_id": "string?"
+      }
+    },
+    {
+      "name": "source_records",
+      "primary_key": [
+        "source_record_id"
+      ],
+      "fields": {
+        "source_record_id": "string",
+        "source_blob_digest": "string",
+        "source_scope_id": "string",
+        "source_section": "string",
+        "record_locator": "string",
+        "statement_id": "string?",
+        "input_kind": "string",
+        "external_record_id": "string?"
+      }
+    },
+    {
+      "name": "declarations",
+      "primary_key": [
+        "declaration_id"
+      ],
+      "fields": {
+        "declaration_id": "string",
+        "declaration_key": "string",
+        "declaration_kind": "string",
+        "revision_digest": "string",
+        "document_path": "string",
+        "document_locator": "string",
+        "payload_json": "string",
+        "valid_from": "date?",
+        "valid_to": "date?"
+      }
+    },
+    {
+      "name": "economic_identities",
+      "primary_key": [
+        "record_kind",
+        "record_id"
+      ],
+      "fields": {
+        "record_kind": "string",
+        "record_id": "string",
+        "anchor_kind": "string",
+        "anchor_id": "string",
+        "event_key": "string",
+        "identity_state": "string",
+        "decision_declaration_id": "string?"
+      }
+    },
+    {
+      "name": "observations",
+      "primary_key": [
+        "observation_id"
+      ],
+      "fields": {
+        "observation_id": "string",
+        "record_kind": "string",
+        "record_id": "string",
+        "field_name": "string",
+        "observation_kind": "string",
+        "value_type": "string",
+        "decimal_value": "decimal?",
+        "text_value": "string?",
+        "date_value": "date?",
+        "commodity_id": "string?",
+        "source_record_id": "string?",
+        "declaration_id": "string?"
+      }
+    },
+    {
+      "name": "links",
+      "primary_key": [
+        "link_id",
+        "member_role",
+        "member_kind",
+        "member_id"
+      ],
+      "fields": {
+        "link_id": "string",
+        "member_role": "string",
+        "member_kind": "string",
+        "member_id": "string",
+        "link_kind": "string",
+        "origin": "string",
+        "terms_declaration_id": "string?"
+      }
+    },
+    {
+      "name": "provenance",
+      "primary_key": [
+        "provenance_id"
+      ],
+      "sort_key": [
+        "record_kind",
+        "record_id",
+        "field_name",
+        "provenance_id"
+      ],
+      "fields": {
+        "provenance_id": "string",
+        "record_kind": "string",
+        "record_id": "string",
+        "field_name": "string",
+        "value_origin": "string",
+        "evidence_kind": "string",
+        "evidence_id": "string",
+        "derivation_id": "string?"
+      }
+    },
+    {
+      "name": "build",
+      "primary_key": [],
+      "fields": {
+        "manifest_digest": "string",
+        "producer_version": "string",
+        "schema_version": "integer",
+        "schema_digest": "string",
+        "as_of": "date",
+        "execution_fingerprint": "string",
+        "is_dirty": "boolean"
+      }
+    }
+  ],
+  "enums": {
+    "transactions.event_kind": [
+      "transaction",
+      "opening",
+      "corporate_action",
+      "note"
+    ],
+    "transactions.event_state": [
+      "pending",
+      "recognized",
+      "cancelled",
+      "retracted"
+    ],
+    "transactions.review_state": [
+      "reviewed",
+      "unreviewed",
+      "ignored"
+    ],
+    "postings.posting_role": [
+      "principal",
+      "commission",
+      "fee",
+      "tax_withheld",
+      "accrued_interest",
+      "variation_margin",
+      "funding",
+      "borrow_fee",
+      "cash",
+      "collateral",
+      "book_result",
+      "rounding"
+    ],
+    "postings.leg_kind": [
+      "position",
+      "boundary"
+    ],
+    "event_times.record_kind": [
+      "transactions",
+      "postings"
+    ],
+    "event_times.date_role": [
+      "authorized",
+      "traded",
+      "posted",
+      "settled",
+      "value",
+      "occurred"
+    ],
+    "event_times.time_mode": [
+      "value",
+      "unknown"
+    ],
+    "book_steps.operation_kind": [
+      "opening",
+      "acquisition",
+      "reduction",
+      "transfer",
+      "pool_entry",
+      "pool_exit",
+      "action",
+      "reference_reset",
+      "quantity",
+      "boundary"
+    ],
+    "book_step_dependencies.constraint_kind": [
+      "effective_time",
+      "source_sequence",
+      "causality",
+      "decision"
+    ],
+    "posting_weights.weight_kind": [
+      "principal",
+      "capitalized_fee",
+      "expense",
+      "consideration",
+      "book_result",
+      "rounding"
+    ],
+    "positions.position_kind": [
+      "property",
+      "claim",
+      "contract"
+    ],
+    "positions.measurement_kind": [
+      "cost",
+      "reference",
+      "quantity"
+    ],
+    "positions.inventory_method": [
+      "individual",
+      "pooled",
+      "quantity"
+    ],
+    "positions.purpose": [
+      "general",
+      "collateral"
+    ],
+    "inventory_allocations.allocation_kind": [
+      "acquisition",
+      "opening",
+      "reduction",
+      "transfer",
+      "pool_entry",
+      "pool_exit",
+      "transformation"
+    ],
+    "inventory_changes.change_role": [
+      "source",
+      "target"
+    ],
+    "component_conversions.component_kind": [
+      "principal",
+      "capitalized_fee",
+      "expensed_fee"
+    ],
+    "fee_allocations.target_kind": [
+      "lot",
+      "disposal"
+    ],
+    "fee_allocations.treatment": [
+      "capitalized",
+      "expensed",
+      "attribution_only"
+    ],
+    "reference_changes.change_kind": [
+      "entry",
+      "reset",
+      "close"
+    ],
+    "assertion_scopes.scope_kind": [
+      "positions",
+      "account_net"
+    ],
+    "assertion_scopes.measurement": [
+      "units",
+      "value"
+    ],
+    "assertion_scopes.selection": [
+      "account_all",
+      "positions"
+    ],
+    "balance_assertions.assertion_kind": [
+      "opening",
+      "closing",
+      "point"
+    ],
+    "prices.basis": [
+      "close",
+      "open",
+      "mid",
+      "bid",
+      "ask",
+      "nav",
+      "trade",
+      "mark",
+      "index",
+      "settlement"
+    ],
+    "prices.origin": [
+      "extracted",
+      "authored",
+      "derived"
+    ],
+    "corporate_actions.action_kind": [
+      "split",
+      "reverse_split",
+      "merger",
+      "spinoff",
+      "stock_dividend",
+      "return_of_capital",
+      "redenomination",
+      "symbol_change"
+    ],
+    "corporate_action_effects.effect_kind": [
+      "units",
+      "cash",
+      "basis",
+      "symbol"
+    ],
+    "action_applications.target_kind": [
+      "inventory_allocation",
+      "inventory_change",
+      "disposal",
+      "posting"
+    ],
+    "action_applications.application_role": [
+      "inventory",
+      "consideration",
+      "settlement"
+    ],
+    "accounts.statement_cadence": [
+      "monthly",
+      "quarterly",
+      "annual",
+      "irregular"
+    ],
+    "categories.category_type": [
+      "income",
+      "expense",
+      "equity"
+    ],
+    "commodities.commodity_kind": [
+      "currency",
+      "equity",
+      "fund",
+      "etf",
+      "crypto",
+      "contract",
+      "other"
+    ],
+    "statements.source_class": [
+      "statement",
+      "rolling"
+    ],
+    "statements.source_format": [
+      "ofx",
+      "csv",
+      "pdf",
+      "json",
+      "xml",
+      "authored"
+    ],
+    "source_records.input_kind": [
+      "bank_statement",
+      "brokerage_statement",
+      "payslip",
+      "receipt",
+      "market_data",
+      "document"
+    ],
+    "declarations.declaration_kind": [
+      "account",
+      "category",
+      "commodity",
+      "counterparty",
+      "position",
+      "assertion_scope",
+      "action_scope",
+      "opening_lot",
+      "booking",
+      "pool",
+      "fee_attribution",
+      "contract_terms",
+      "corporate_action",
+      "identity",
+      "ordering",
+      "rule",
+      "correction",
+      "link",
+      "authored_fact"
+    ],
+    "economic_identities.record_kind": [
+      "transaction",
+      "corporate_action"
+    ],
+    "economic_identities.anchor_kind": [
+      "source_record",
+      "declaration"
+    ],
+    "economic_identities.identity_state": [
+      "active",
+      "retired"
+    ],
+    "observations.observation_kind": [
+      "description",
+      "source_status",
+      "broker_lot",
+      "broker_match",
+      "broker_basis",
+      "broker_gain",
+      "notional",
+      "source_field"
+    ],
+    "observations.value_type": [
+      "decimal",
+      "text",
+      "date"
+    ],
+    "links.link_kind": [
+      "transfer",
+      "card_payment",
+      "settlement",
+      "document",
+      "lot_transfer",
+      "trade_chain",
+      "lifecycle",
+      "complete_set"
+    ],
+    "links.member_kind": [
+      "transaction",
+      "posting",
+      "blob",
+      "lot",
+      "commodity"
+    ],
+    "links.origin": [
+      "derived",
+      "correction",
+      "declaration"
+    ],
+    "provenance.value_origin": [
+      "extracted",
+      "rule",
+      "correction",
+      "declaration",
+      "booking",
+      "action"
+    ],
+    "provenance.evidence_kind": [
+      "source_record",
+      "declaration"
+    ]
+  }
+}

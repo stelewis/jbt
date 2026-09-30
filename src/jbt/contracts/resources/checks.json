@@ -1,0 +1,424 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {
+      "name": "schema_conformance",
+      "owner": "publication",
+      "tables": [
+        "*"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "complete_table_set",
+      "owner": "publication",
+      "tables": [
+        "*"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "canonical_numeric_encoding",
+      "owner": "publication",
+      "tables": [
+        "*"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "keys_and_entity_qualified_references",
+      "owner": "publication",
+      "tables": [
+        "*"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "serialization_order",
+      "owner": "publication",
+      "tables": [
+        "*"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "participation",
+      "owner": "publication",
+      "tables": [
+        "transactions",
+        "postings",
+        "book_steps",
+        "posting_weights"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "economic_precedence_graph",
+      "owner": "publication",
+      "tables": [
+        "book_steps",
+        "book_step_dependencies",
+        "observations",
+        "source_records"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "time_and_date_combinations",
+      "owner": "publication",
+      "tables": [
+        "transactions",
+        "postings",
+        "event_times",
+        "book_steps",
+        "balance_assertions",
+        "prices",
+        "corporate_actions"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "position_measurement",
+      "owner": "publication",
+      "tables": [
+        "positions",
+        "inventory_pools"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "lot_and_category_lineage",
+      "owner": "publication",
+      "tables": [
+        "lots",
+        "opening_lots",
+        "categories"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "weight_conservation",
+      "owner": "publication",
+      "tables": [
+        "posting_weights"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "allocation_shape",
+      "owner": "publication",
+      "tables": [
+        "inventory_allocations",
+        "inventory_changes"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "inventory_posting_units",
+      "owner": "publication",
+      "tables": [
+        "postings",
+        "inventory_changes"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "allocation_component_conservation",
+      "owner": "publication",
+      "tables": [
+        "inventory_allocations",
+        "inventory_changes",
+        "component_conversions"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "inventory_availability_and_atomic_replay",
+      "owner": "publication",
+      "tables": [
+        "inventory_changes",
+        "book_steps"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "disposal_grain",
+      "owner": "publication",
+      "tables": [
+        "disposals",
+        "inventory_allocations"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "fee_attribution_conservation",
+      "owner": "publication",
+      "tables": [
+        "fee_allocations",
+        "inventory_fee_changes"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "reference_continuity",
+      "owner": "publication",
+      "tables": [
+        "reference_changes"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "reference_settlement_attribution",
+      "owner": "publication",
+      "tables": [
+        "reference_settlements",
+        "postings"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "assertion_scope_and_grain",
+      "owner": "publication",
+      "tables": [
+        "assertion_scopes",
+        "balance_assertions",
+        "balances"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "action_effect_combinations",
+      "owner": "publication",
+      "tables": [
+        "corporate_action_effects"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "action_application_identity",
+      "owner": "publication",
+      "tables": [
+        "action_applications",
+        "corporate_action_effects",
+        "inventory_allocations",
+        "inventory_changes",
+        "lots",
+        "inventory_pools",
+        "disposals",
+        "postings"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "link_roles_and_cardinality",
+      "owner": "publication",
+      "tables": [
+        "links"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "observation_payload_and_evidence",
+      "owner": "publication",
+      "tables": [
+        "observations"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "provenance_completeness",
+      "owner": "publication",
+      "tables": [
+        "provenance"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
+      "name": "closed_declaration_variants",
+      "owner": "publication",
+      "tables": [
+        "declarations"
+      ],
+      "implementation": "validate_declaration"
+    },
+    {
+      "name": "typed_assignment_permissions",
+      "owner": "publication",
+      "tables": [
+        "declarations"
+      ],
+      "implementation": "validate_declaration"
+    },
+    {
+      "name": "contract_terms_combinations",
+      "owner": "publication",
+      "tables": [
+        "declarations"
+      ],
+      "implementation": "validate_declaration"
+    },
+    {
+      "name": "journal_order_and_active_revisions",
+      "owner": "publication",
+      "tables": [
+        "declarations"
+      ],
+      "implementation": "validate_manifest"
+    },
+    {
+      "name": "active_references_and_membership",
+      "owner": "publication",
+      "tables": [
+        "declarations",
+        "economic_identities"
+      ],
+      "implementation": "validate_manifest"
+    },
+    {
+      "name": "source_authority_conflicts",
+      "owner": "publication",
+      "tables": [
+        "statements",
+        "source_records"
+      ],
+      "implementation": "validate_configuration"
+    },
+    {
+      "name": "rendering_identity_and_collisions",
+      "owner": "publication",
+      "tables": [
+        "positions",
+        "categories"
+      ],
+      "implementation": "validate_configuration"
+    },
+    {
+      "name": "source_registries",
+      "owner": "publication",
+      "tables": [
+        "observations",
+        "statements"
+      ],
+      "implementation": "validate_registries"
+    },
+    {
+      "name": "recovery_inventory_and_custody",
+      "owner": "publication",
+      "tables": [
+        "source_records",
+        "commodity_symbols",
+        "links"
+      ],
+      "implementation": "validate_manifest"
+    },
+    {
+      "name": "required_check_applicability",
+      "owner": "publication",
+      "tables": [
+        "build"
+      ],
+      "implementation": "validate_manifest"
+    },
+    {
+      "name": "manifest_descriptor_inventory",
+      "owner": "publication",
+      "tables": [
+        "build"
+      ],
+      "implementation": "validate_descriptor"
+    },
+    {
+      "name": "extraction_fidelity",
+      "owner": "domain",
+      "tables": [
+        "source_records",
+        "observations",
+        "balance_assertions",
+        "balances"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "model_fidelity",
+      "owner": "domain",
+      "tables": [
+        "postings",
+        "balance_assertions",
+        "balances"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "committed_as_of_coverage",
+      "owner": "domain",
+      "tables": [
+        "accounts",
+        "statements",
+        "build"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "noncommutative_order_evidence",
+      "owner": "domain",
+      "tables": [
+        "book_steps",
+        "book_step_dependencies"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "action_eligible_slice_completeness",
+      "owner": "domain",
+      "tables": [
+        "corporate_actions",
+        "corporate_action_effects",
+        "action_applications",
+        "inventory_changes"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "contract_settlement_formula",
+      "owner": "domain",
+      "tables": [
+        "declarations",
+        "reference_changes",
+        "reference_settlements"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "guard_applicability",
+      "owner": "domain",
+      "tables": [
+        "declarations"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "revision_digest_identity",
+      "owner": "domain",
+      "tables": [
+        "declarations"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "atomic_publication_and_byte_integrity",
+      "owner": "artifact",
+      "tables": [
+        "*"
+      ],
+      "implementation": null
+    },
+    {
+      "name": "deterministic_replay",
+      "owner": "artifact",
+      "tables": [
+        "*"
+      ],
+      "implementation": null
+    }
+  ]
+}
