@@ -385,14 +385,18 @@ def revision_id(
     entity: EntityId,
     key: SemanticKey,
     *,
-    effective_from: date,
+    effective_from: date | None,
     effective_to: date | None,
     payload: dict[str, JsonValue],
 ) -> RecordId:
-    """Hash immutable revision meaning, excluding custody and self-reference."""
-    if type(effective_from) is not date or (
-        effective_to is not None
-        and (type(effective_to) is not date or effective_to <= effective_from)
+    """Hash revision meaning; a null interval endpoint is unbounded."""
+    if any(
+        endpoint is not None and type(endpoint) is not date
+        for endpoint in (effective_from, effective_to)
+    ) or (
+        effective_from is not None
+        and effective_to is not None
+        and effective_to <= effective_from
     ):
         raise IdentityError(
             constraint="revision_effective_interval", location="declaration_revision"
@@ -413,7 +417,9 @@ def revision_id(
     projection = {
         "entity_id": entity.value,
         "declaration_key": key.value,
-        "valid_from": effective_from.isoformat(),
+        "valid_from": effective_from.isoformat()
+        if effective_from is not None
+        else None,
         "valid_to": effective_to.isoformat() if effective_to is not None else None,
         "kind": kind,
         "schema_version": version,

@@ -306,17 +306,54 @@ def test_authored_anchor_literal_identity_digest() -> None:
 
 
 @pytest.mark.golden
-def test_revision_uses_literal_json_not_identity_framing() -> None:
+@pytest.mark.parametrize(
+    ("start", "end", "interval"),
+    [
+        (None, None, b'"valid_from":null,"valid_to":null'),
+        (
+            date(2026, 1, 1),
+            None,
+            b'"valid_from":"2026-01-01","valid_to":null',
+        ),
+        (
+            None,
+            date(2026, 2, 1),
+            b'"valid_from":null,"valid_to":"2026-02-01"',
+        ),
+        (
+            date(2026, 1, 1),
+            date(2026, 2, 1),
+            b'"valid_from":"2026-01-01","valid_to":"2026-02-01"',
+        ),
+    ],
+)
+def test_revision_uses_literal_json_not_identity_framing(
+    start: date | None,
+    end: date | None,
+    interval: bytes,
+) -> None:
     literal = (
         b'{"declaration_key":"p","entity_id":"synthetic","kind":"position",'
         b'"payload":{"kind":"position","name":"one","schema_version":1},'
-        b'"schema_version":1,"valid_from":"2026-01-01","valid_to":null}\n'
+        b'"schema_version":1,' + interval + b"}\n"
     )
     actual = revision_id(
         EntityId("synthetic"),
         SemanticKey("p"),
-        effective_from=date(2026, 1, 1),
-        effective_to=None,
+        effective_from=start,
+        effective_to=end,
         payload={"schema_version": 1, "name": "one", "kind": "position"},
     )
     assert actual.value == sha256(literal).hexdigest()
+
+
+@pytest.mark.parametrize("end", [date(2026, 1, 1), date(2025, 12, 31)])
+def test_revision_rejects_empty_or_reversed_effective_interval(end: date) -> None:
+    with pytest.raises(IdentityError, match="revision_effective_interval"):
+        revision_id(
+            EntityId("synthetic"),
+            SemanticKey("p"),
+            effective_from=date(2026, 1, 1),
+            effective_to=end,
+            payload={"kind": "position", "schema_version": 1},
+        )
