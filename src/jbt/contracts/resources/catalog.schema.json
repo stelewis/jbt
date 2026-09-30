@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "numeric_limits",
+    "bundles",
+    "tables",
+    "enums"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "numeric_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coefficient_digits",
+        "scale",
+        "source_scale",
+        "intermediate_digits",
+        "intermediate_scale"
+      ],
+      "properties": {
+        "coefficient_digits": {
+          "const": 96
+        },
+        "scale": {
+          "const": 38
+        },
+        "source_scale": {
+          "const": 38
+        },
+        "intermediate_digits": {
+          "const": 384
+        },
+        "intermediate_scale": {
+          "const": 152
+        }
+      }
+    },
+    "bundles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dates",
+        "date_modes",
+        "time"
+      ],
+      "properties": {
+        "dates": {
+          "$ref": "#/$defs/fields"
+        },
+        "date_modes": {
+          "$ref": "#/$defs/fields"
+        },
+        "time": {
+          "$ref": "#/$defs/fields"
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "minItems": 38,
+      "maxItems": 38,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "primary_key",
+          "fields"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z_]+$"
+          },
+          "primary_key": {
+            "$ref": "#/$defs/names"
+          },
+          "sort_key": {
+            "$ref": "#/$defs/names"
+          },
+          "unique": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/names"
+            }
+          },
+          "bundles": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "dates",
+                "date_modes",
+                "time"
+              ]
+            },
+            "uniqueItems": true
+          },
+          "fields": {
+            "$ref": "#/$defs/fields"
+          }
+        }
+      }
+    },
+    "enums": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z_]+\\.[a-z_]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/names"
+      }
+    }
+  },
+  "$defs": {
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "fields": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z_]+$"
+      },
+      "additionalProperties": {
+        "enum": [
+          "string",
+          "string?",
+          "integer",
+          "integer?",
+          "boolean",
+          "boolean?",
+          "date",
+          "date?",
+          "list",
+          "decimal",
+          "decimal?"
+        ]
+      }
+    }
+  }
+}

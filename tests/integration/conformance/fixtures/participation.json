@@ -1,0 +1,348 @@
+{
+  "extends": "common.json",
+  "case_id": "participation",
+  "source_texts": {
+    "posted": "INVENTED POSTED record POST-CHANGED: USD 5 books; reviewed correspondence to AUTH-OLD."
+  },
+  "policies": [
+    {
+      "id": "identity-purchase",
+      "kind": "identity",
+      "payload": {
+        "record_kind": "transaction",
+        "event_key": "purchase",
+        "anchor": {
+          "kind": "source_record",
+          "id": "@source:purchase"
+        },
+        "members": [
+          {
+            "source_record_id": "@source:purchase",
+            "event_key": "purchase"
+          },
+          {
+            "source_record_id": "@source:posted",
+            "event_key": "purchase"
+          }
+        ],
+        "authored_keys": [],
+        "retired_ids": [],
+        "successor_ids": [],
+        "guards": [],
+        "reason": "Invented AUTH and POSTED evidence explicitly correspond despite changed external IDs."
+      }
+    },
+    {
+      "id": "payee-rule",
+      "kind": "rule",
+      "payload": {
+        "order": 0,
+        "matches": [
+          {
+            "field": "transactions.narration",
+            "operator": "contains",
+            "value": "books"
+          }
+        ],
+        "assignments": [
+          {
+            "field": "transactions.payee",
+            "value": "Invented Books"
+          }
+        ],
+        "split": []
+      }
+    }
+  ],
+  "oracle_notes": [
+    "AUTH and POSTED support one canonical purchase -5, not two charges. Ignored review status does not suppress the recognized network fee -1.",
+    "Cancelled attempt and pending authorization have inspectable legs but no steps or weights. A later reversal is a separate recognized +5 event, not source retraction.",
+    "Recognized cash effects -5-1+5=-1; pending 7 never enters the balance."
+  ],
+  "expected_answers": {
+    "positions": {
+      "cash-A": "-1"
+    },
+    "recognized_events": 3,
+    "nonparticipating_events": 2,
+    "purchase_count": 1,
+    "pending_effect": "0",
+    "cancelled_effect": "0",
+    "paid_fee": "1",
+    "reversal_effect": "5"
+  },
+  "negative_cases": [
+    {
+      "id": "review-controls-booking",
+      "mutation": "ignored_fee_removed",
+      "owner": "participation",
+      "expected": "recognized-effect-retained"
+    },
+    {
+      "id": "pending-has-step",
+      "mutation": "pending_step",
+      "owner": "participation",
+      "expected": "nonrecognized-step"
+    },
+    {
+      "id": "unreviewed-membership",
+      "mutation": "identity_membership_removed",
+      "owner": "identity",
+      "expected": "explicit-membership-required"
+    }
+  ],
+  "rows": {
+    "source_records": [
+      {
+        "source_record_id": "@source:posted",
+        "source_blob_digest": "blob:posted",
+        "source_scope_id": "synthetic-fixture",
+        "source_section": "events",
+        "record_locator": "json:posted",
+        "input_kind": "bank_statement",
+        "external_record_id": "POST-CHANGED"
+      }
+    ],
+    "observations": [
+      {
+        "observation_id": "@auth-status",
+        "record_kind": "transactions",
+        "record_id": [
+          "@purchase"
+        ],
+        "field_name": "source.status",
+        "observation_kind": "source_status",
+        "value_type": "text",
+        "text_value": "AUTH",
+        "source_record_id": "@source:purchase"
+      },
+      {
+        "observation_id": "@posted-status",
+        "record_kind": "transactions",
+        "record_id": [
+          "@purchase"
+        ],
+        "field_name": "source.status",
+        "observation_kind": "source_status",
+        "value_type": "text",
+        "text_value": "POSTED",
+        "source_record_id": "@source:posted"
+      },
+      {
+        "observation_id": "@failed-status",
+        "record_kind": "transactions",
+        "record_id": [
+          "@failed"
+        ],
+        "field_name": "source.status",
+        "observation_kind": "source_status",
+        "value_type": "text",
+        "text_value": "FAILED",
+        "source_record_id": "@source:failed"
+      },
+      {
+        "observation_id": "@fee-status",
+        "record_kind": "transactions",
+        "record_id": [
+          "@paid-network-fee"
+        ],
+        "field_name": "source.status",
+        "observation_kind": "source_status",
+        "value_type": "text",
+        "text_value": "FEE_PAID",
+        "source_record_id": "@source:paid-network-fee"
+      }
+    ],
+    "links": [
+      {
+        "link_id": "@failed-lifecycle",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@failed",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@failed-lifecycle",
+        "member_role": "fee",
+        "member_kind": "posting",
+        "member_id": "@network-cash",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@reversal-lifecycle",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@purchase",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@reversal-lifecycle",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@reverse",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      }
+    ]
+  },
+  "events": [
+    {
+      "id": "purchase",
+      "date": "2026-01-02",
+      "operation": "quantity",
+      "evidence": "INVENTED card AUTH 5 for books, external ID AUTH-OLD; later POST-CHANGED recognized by reviewed correspondence.",
+      "legs": [
+        {
+          "id": "purchase-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-5",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-5",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "purchase-expense",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "5",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pending",
+      "date": "2026-01-03",
+      "operation": "quantity",
+      "state": "pending",
+      "evidence": "INVENTED pending authorization 7; absent from next rolling window is not proof of cancellation.",
+      "legs": [
+        {
+          "id": "pending-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-7",
+          "role": "cash"
+        },
+        {
+          "id": "pending-expense",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "7",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "failed",
+      "date": "2026-01-04",
+      "operation": "quantity",
+      "state": "cancelled",
+      "evidence": "INVENTED transfer attempt 10 cancelled with explicit FAILED token; independent paid network fee follows.",
+      "legs": [
+        {
+          "id": "failed-out",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-10",
+          "role": "cash"
+        },
+        {
+          "id": "failed-in",
+          "position": "cash-B",
+          "commodity": "USD",
+          "amount": "10",
+          "role": "cash"
+        }
+      ]
+    },
+    {
+      "id": "paid-network-fee",
+      "date": "2026-01-04",
+      "operation": "quantity",
+      "review": "ignored",
+      "evidence": "INVENTED FEE_PAID USD 1 for the failed attempt; economic status recognized regardless of ignored review label.",
+      "legs": [
+        {
+          "id": "network-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-1",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "network-expense",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reverse",
+      "date": "2026-01-05",
+      "operation": "quantity",
+      "evidence": "INVENTED separately posted purchase refund USD 5, referencing original purchase; not an authoritative source retraction.",
+      "legs": [
+        {
+          "id": "reverse-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "5",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "5",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "reverse-expense",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "-5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "-5",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

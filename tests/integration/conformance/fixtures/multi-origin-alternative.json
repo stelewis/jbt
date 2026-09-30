@@ -1,0 +1,128 @@
+{
+  "extends": "multi-origin.json",
+  "case_id": "multi-origin-alternative",
+  "oracle_notes": [
+    "Alternative reviewed selection moves three from each origin: principal 30 + 60 = 90. Identical six-unit link membership cannot encode or replace this decision."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "4",
+        "principal": "70"
+      },
+      "BQ": {
+        "units": "6",
+        "principal": "90"
+      }
+    },
+    "allocation_count": 4,
+    "transfer_allocation_count": 2,
+    "transfer_disposal_count": 0
+  },
+  "replacements": [
+    {
+      "path": [
+        "events",
+        1,
+        "evidence"
+      ],
+      "value": "INVENTED selected movement: transfer six Q A to B; reviewed FIRST three, SECOND three."
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "units"
+      ],
+      "value": "-3"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "principal"
+      ],
+      "value": "-30"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "units"
+      ],
+      "value": "3"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "principal"
+      ],
+      "value": "30"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        1,
+        "changes",
+        0,
+        "units"
+      ],
+      "value": "-3"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        1,
+        "changes",
+        0,
+        "principal"
+      ],
+      "value": "-60"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        1,
+        "changes",
+        1,
+        "units"
+      ],
+      "value": "3"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        1,
+        "changes",
+        1,
+        "principal"
+      ],
+      "value": "60"
+    }
+  ]
+}

@@ -1,0 +1,341 @@
+{
+  "extends": "common.json",
+  "case_id": "rounding",
+  "oracle_notes": [
+    "Total principal 10 for three Q remains exact. First 1/3 slice rounds to 3.33. Remaining 6.67/2 = 3.335 rounds half-even to 3.34. Last consumes residual 3.33.",
+    "Published principal changes sum 10-3.33-3.34-3.33=0; no rounded per-unit cost is authoritative."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "0",
+        "principal": "0"
+      }
+    },
+    "consumed_principal": [
+      "3.33",
+      "3.34",
+      "3.33"
+    ],
+    "final_principal": "0",
+    "rounded_original_average_three_times": "9.99"
+  },
+  "negative_cases": [
+    {
+      "id": "lost-residual",
+      "mutation": "final_principal_residual",
+      "owner": "full-close",
+      "expected": "remaining-principal"
+    }
+  ],
+  "events": [
+    {
+      "id": "thirds-buy",
+      "date": "2026-01-01",
+      "operation": "acquisition",
+      "evidence": "INVENTED fill THIRDS: three Q, exact total USD 10, known zero fees; source unit quote USD 3.33.",
+      "legs": [
+        {
+          "id": "thirds-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "3",
+          "role": "principal",
+          "fields": {
+            "price_per_unit": {
+              "n": "3.33"
+            },
+            "price_commodity_id": "@USD"
+          },
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "thirds-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-10",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-10",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "thirds-acq",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "thirds-in",
+              "role": "target",
+              "posting": "thirds-q",
+              "position": "AQ",
+              "lot": "thirds",
+              "units": "3",
+              "principal": "10",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@thirds",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:thirds-buy",
+            "origin_posting_id": "@thirds-q",
+            "origin_key": "total-not-unit-cost",
+            "acquisition_date": "2026-01-01",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "observations": [
+          {
+            "observation_id": "@source-total",
+            "record_kind": "postings",
+            "record_id": [
+              "@thirds-q"
+            ],
+            "field_name": "broker.total",
+            "observation_kind": "source_field",
+            "value_type": "decimal",
+            "decimal_value": {
+              "n": "10"
+            },
+            "commodity_id": "@USD",
+            "source_record_id": "@source:thirds-buy"
+          }
+        ]
+      }
+    },
+    {
+      "id": "thirds-sale1",
+      "date": "2026-01-02",
+      "operation": "reduction",
+      "evidence": "INVENTED sale ONE: one Q for total USD 3.33, zero fees.",
+      "legs": [
+        {
+          "id": "thirds-out1",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-3.33",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "thirds-cash1",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "3.33",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "3.33",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "thirds-reduce1",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "thirds-c1",
+              "role": "source",
+              "posting": "thirds-out1",
+              "position": "AQ",
+              "lot": "thirds",
+              "units": "-1",
+              "principal": "-3.33",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@thirds-d1",
+            "allocation_id": "@thirds-reduce1",
+            "proceeds_total": {
+              "n": "3.33"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "thirds-sale2",
+      "date": "2026-01-03",
+      "operation": "reduction",
+      "evidence": "INVENTED sale TWO: one Q for total USD 3.34, zero fees.",
+      "legs": [
+        {
+          "id": "thirds-out2",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-3.34",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "thirds-cash2",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "3.34",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "3.34",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "thirds-reduce2",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "thirds-c2",
+              "role": "source",
+              "posting": "thirds-out2",
+              "position": "AQ",
+              "lot": "thirds",
+              "units": "-1",
+              "principal": "-3.34",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@thirds-d2",
+            "allocation_id": "@thirds-reduce2",
+            "proceeds_total": {
+              "n": "3.34"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "thirds-sale3",
+      "date": "2026-01-04",
+      "operation": "reduction",
+      "evidence": "INVENTED sale THREE: final one Q for total USD 3.33, zero fees.",
+      "legs": [
+        {
+          "id": "thirds-out3",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-3.33",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "thirds-cash3",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "3.33",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "3.33",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "thirds-reduce3",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "thirds-c3",
+              "role": "source",
+              "posting": "thirds-out3",
+              "position": "AQ",
+              "lot": "thirds",
+              "units": "-1",
+              "principal": "-3.33",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@thirds-d3",
+            "allocation_id": "@thirds-reduce3",
+            "proceeds_total": {
+              "n": "3.33"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    }
+  ]
+}

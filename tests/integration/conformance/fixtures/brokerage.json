@@ -1,0 +1,368 @@
+{
+  "extends": "common.json",
+  "case_id": "brokerage",
+  "policies": [
+    {
+      "id": "opening-lot",
+      "kind": "opening_lot",
+      "payload": {
+        "opening_txn_id": "@broker-open",
+        "posting_key": "broker-shares",
+        "origin_key": "historic-purchase",
+        "position_id": "@AQ",
+        "units": {
+          "n": "10"
+        },
+        "acquisition_date": "2024-06-10",
+        "principal": {
+          "amount": {
+            "n": "50"
+          },
+          "commodity_id": "@USD"
+        },
+        "fees": [],
+        "fees_complete": true,
+        "broker_lot_id": "LOT-PAST",
+        "reference": null,
+        "reference_commodity_id": null,
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:broker-open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "gross",
+      "kind": "assertion_scope",
+      "payload": {
+        "scope_id": "@gross",
+        "account_id": "@A",
+        "scope_kind": "positions",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "positions",
+        "position_ids": [
+          "@cash-A",
+          "@debt"
+        ],
+        "quote_commodity_id": null,
+        "valuation_evidence": [],
+        "tolerance": {
+          "n": "0"
+        }
+      }
+    },
+    {
+      "id": "net",
+      "kind": "assertion_scope",
+      "payload": {
+        "scope_id": "@net",
+        "account_id": "@A",
+        "scope_kind": "account_net",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "positions",
+        "position_ids": [
+          "@cash-A",
+          "@debt"
+        ],
+        "quote_commodity_id": null,
+        "valuation_evidence": [],
+        "tolerance": {
+          "n": "0"
+        }
+      }
+    }
+  ],
+  "oracle_notes": [
+    "One account A has shares 10 Q/book principal USD 50, cash +100 USD, debt -40 USD. Opening weights 50+100-40-110=0.",
+    "After USD 3 fee, separate cash/debt balances are +97/-40; account-net USD 57 does not assert either gross relationship or value Q.",
+    "A +110/-50 counterexample has net 60 but differs from both opening gross facts. Historical lot acquisition is 2024-06-10, not 2026 adoption."
+  ],
+  "expected_answers": {
+    "positions": {
+      "AQ": "10",
+      "cash-A": "97",
+      "debt": "-40"
+    },
+    "opening_gross": [
+      "100",
+      "-40"
+    ],
+    "opening_net": "60",
+    "closing_gross": [
+      "97",
+      "-40"
+    ],
+    "closing_net": "57",
+    "shares_principal": "50",
+    "historic_acquisition": "2024-06-10",
+    "false_gross_same_net": [
+      "110",
+      "-50"
+    ]
+  },
+  "negative_cases": [
+    {
+      "id": "category-as-account",
+      "mutation": "category_as_account",
+      "owner": "entity-foreign-key",
+      "expected": "foreign-key"
+    },
+    {
+      "id": "boundary-account",
+      "mutation": "boundary_account",
+      "owner": "posting-shape",
+      "expected": "boundary-fields"
+    },
+    {
+      "id": "wrong-position-account",
+      "mutation": "wrong_position_account",
+      "owner": "posting-binding",
+      "expected": "position-account"
+    },
+    {
+      "id": "net-hides-gross",
+      "mutation": "gross_same_net",
+      "owner": "assertion-scope",
+      "expected": "gross-mismatch"
+    }
+  ],
+  "rows": {
+    "statements": [
+      {
+        "statement_id": "@statement-A",
+        "account_id": "@A",
+        "institution": "Invented Fixture Institution",
+        "source_class": "statement",
+        "period_start": "2026-01-01",
+        "period_end": "2026-01-31",
+        "stated_currency": "USD",
+        "source_format": "json",
+        "is_eclipsed": false,
+        "coverage_basis": "settled-units"
+      }
+    ],
+    "assertion_scopes": [
+      {
+        "scope_id": "@gross",
+        "account_id": "@A",
+        "declaration_id": "@declaration:gross",
+        "scope_kind": "positions",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "positions",
+        "position_ids": [
+          "@cash-A",
+          "@debt"
+        ]
+      },
+      {
+        "scope_id": "@net",
+        "account_id": "@A",
+        "declaration_id": "@declaration:net",
+        "scope_kind": "account_net",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "positions",
+        "position_ids": [
+          "@cash-A",
+          "@debt"
+        ]
+      }
+    ],
+    "balance_assertions": [
+      {
+        "assertion_set_id": "@gross-close",
+        "scope_id": "@gross",
+        "date": "2026-01-31",
+        "assertion_kind": "closing",
+        "is_complete": true,
+        "statement_id": "@statement-A"
+      },
+      {
+        "assertion_set_id": "@net-close",
+        "scope_id": "@net",
+        "date": "2026-01-31",
+        "assertion_kind": "closing",
+        "is_complete": true,
+        "statement_id": "@statement-A"
+      }
+    ],
+    "balances": [
+      {
+        "balance_id": "@cash-balance",
+        "assertion_set_id": "@gross-close",
+        "position_id": "@cash-A",
+        "commodity_id": "@USD",
+        "amount": {
+          "n": "97"
+        }
+      },
+      {
+        "balance_id": "@debt-balance",
+        "assertion_set_id": "@gross-close",
+        "position_id": "@debt",
+        "commodity_id": "@USD",
+        "amount": {
+          "n": "-40"
+        }
+      },
+      {
+        "balance_id": "@net-balance",
+        "assertion_set_id": "@net-close",
+        "commodity_id": "@USD",
+        "amount": {
+          "n": "57"
+        }
+      }
+    ]
+  },
+  "events": [
+    {
+      "id": "broker-open",
+      "date": "2026-01-01",
+      "operation": "opening",
+      "kind": "opening",
+      "statement": "@statement-A",
+      "evidence": "INVENTED adoption statement: shares ten Q acquired 2024-06-10 for USD 50, known zero fees, broker lot LOT-PAST; cash USD 100; debt to distinct lender USD -40.",
+      "legs": [
+        {
+          "id": "broker-shares",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "50",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "broker-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "broker-debt",
+          "position": "debt",
+          "commodity": "USD",
+          "amount": "-40",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-40",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "broker-equity",
+          "category": "opening-equity",
+          "commodity": "USD",
+          "amount": "-110",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-110",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "broker-initialize",
+          "kind": "opening",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "broker-initial",
+              "role": "target",
+              "posting": "broker-shares",
+              "position": "AQ",
+              "lot": "historic-lot",
+              "units": "10",
+              "principal": "50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@historic-lot",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:broker-open",
+            "origin_posting_id": "@broker-shares",
+            "origin_key": "historic-purchase",
+            "acquisition_date": "2024-06-10",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "opening_lots": [
+          {
+            "lot_id": "@historic-lot",
+            "declaration_id": "@declaration:opening-lot",
+            "broker_lot_id": "LOT-PAST"
+          }
+        ]
+      }
+    },
+    {
+      "id": "broker-fee",
+      "date": "2026-01-02",
+      "operation": "quantity",
+      "statement": "@statement-A",
+      "evidence": "INVENTED custody fee USD 3; cash closes 97, debt remains -40; net statement USD 57.",
+      "legs": [
+        {
+          "id": "fee-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-3",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-3",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "fee-expense",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "3",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "3",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

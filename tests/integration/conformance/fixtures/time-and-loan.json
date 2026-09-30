@@ -1,0 +1,153 @@
+{
+  "extends": "obligations.json",
+  "case_id": "time-and-loan",
+  "accounts": [
+    {
+      "id": "P",
+      "fields": {
+        "opened_date": "2026-10-20",
+        "closed_date": "2026-11-08",
+        "civil_zone": "America/New_York",
+        "statement_cadence": "irregular",
+        "coverage_start_date": "2026-10-20"
+      },
+      "period_rule": "explicit",
+      "publication_lag_days": 2,
+      "expected_periods": [
+        {"start": "2026-10-20", "end": "2026-11-01", "due": "2026-11-04"},
+        {"start": "2026-11-02", "end": "2026-11-08", "due": "2026-11-10"}
+      ]
+    }
+  ],
+  "positions": [
+    {
+      "id": "cash-P",
+      "account": "P",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "consumer": {
+    "fold_resolution": {
+      "tzdb_version": "2026a",
+      "candidate_offsets": [-240, -300],
+      "decision": "later",
+      "offset_minutes": -300,
+      "shift_minutes": 0
+    }
+  },
+  "oracle_notes": [
+    "The New York civil time 2026-11-01 01:30 repeats: retained offset -300 and pinned 2026a later-fold decision resolve to UTC 06:30; absent offset or decision cannot resolve an instant.",
+    "The invented first irregular statement closes 2026-11-01; 23:50 local belongs to that civil period although the selected UTC date is 2026-11-02.",
+    "The second explicit period 2026-11-02 through closed-account horizon 2026-11-08 has a source statement affirming zero movements, not a missing statement. As-of 2026-12-31 is a committed build input; no period beyond account closure is required.",
+    "The lender explicitly attributed USD 12 to principal 10 and interest 2 in the inherited recognized payment. A later observed gross USD 7 lacks split evidence and remains pending; no principal reduction, interest expense, or amortization schedule is inferred."
+  ],
+  "expected_answers": {
+    "fold_utc": "2026-11-01T06:30:00Z",
+    "late_local_utc": "2026-11-02T04:50:00Z",
+    "first_period_end": "2026-11-01",
+    "empty_period": {"start": "2026-11-02", "end": "2026-11-08", "due": "2026-11-10", "movements": "0"},
+    "closed_date": "2026-11-08",
+    "as_of": "2026-12-31",
+    "known_principal_repaid": "10",
+    "known_interest_expense": "2",
+    "known_gross_payment": "12",
+    "unallocated_gross": "7",
+    "unallocated_principal": null,
+    "unallocated_interest": null
+  },
+  "negative_cases": [
+    {"id": "unresolved-fold", "mutation": "omit_offset_and_resolution", "owner": "civil-time", "expected": "required_instant_unresolved"},
+    {"id": "conflicting-fold", "mutation": "earlier_offset_with_later_decision", "owner": "civil-time", "expected": "zone_offset_disagreement"},
+    {"id": "utc-period-substitution", "mutation": "use_utc_date_instead_of_local", "owner": "civil-coverage", "expected": "wrong-period"},
+    {"id": "invent-loan-allocation", "mutation": "derive_principal_interest_from_gross", "owner": "loan-evidence", "expected": "missing-allocation"}
+  ],
+  "events": [
+    {
+      "id": "unallocated-loan-observation",
+      "date": "2026-02-28",
+      "operation": "quantity",
+      "state": "pending",
+      "review": "unreviewed",
+      "evidence": "INVENTED replacement lender observation: gross scheduled payment USD 7; principal and interest amounts not supplied; no rate or amortization schedule.",
+      "legs": [
+        {"id": "unallocated-gross", "position": "cash-A", "commodity": "USD", "amount": "-7", "role": "cash"}
+      ]
+    },
+    {
+      "id": "fold-deposit",
+      "date": "2026-11-01",
+      "operation": "quantity",
+      "statement": "@irregular-first",
+      "evidence": "INVENTED New York statement: credit USD 9 at 2026-11-01 01:30 EST (UTC-05:00), second occurrence of 01:30, under pinned 2026a rules.",
+      "legs": [
+        {"id": "fold-cash", "position": "cash-P", "commodity": "USD", "amount": "9", "role": "cash"},
+        {"id": "fold-income", "category": "income", "commodity": "USD", "amount": "-9", "role": "principal"}
+      ],
+      "rows": {
+        "event_times": [
+          {"record_kind": "transactions", "record_id": "@fold-deposit", "date_role": "posted", "time_mode": "value", "timestamp_date": "2026-11-01", "timestamp_local": "01:30", "timestamp_offset_minutes": -300, "timestamp_zone": "America/New_York", "timestamp_precision": "minute"}
+        ]
+      }
+    },
+    {
+      "id": "late-local-credit",
+      "date": "2026-11-01",
+      "operation": "quantity",
+      "statement": "@irregular-first",
+      "evidence": "INVENTED New York statement: USD 1 credit at 23:50 local on period end November 1, UTC date November 2.",
+      "legs": [
+        {"id": "late-local-cash", "position": "cash-P", "commodity": "USD", "amount": "1", "role": "cash"},
+        {"id": "late-local-income", "category": "income", "commodity": "USD", "amount": "-1", "role": "principal"}
+      ],
+      "rows": {
+        "event_times": [
+          {"record_kind": "transactions", "record_id": "@late-local-credit", "date_role": "posted", "time_mode": "value", "timestamp_date": "2026-11-01", "timestamp_local": "23:50", "timestamp_offset_minutes": -300, "timestamp_zone": "America/New_York", "timestamp_precision": "minute"}
+        ]
+      }
+    },
+    {
+      "id": "empty-period-notice",
+      "date": "2026-11-08",
+      "operation": "boundary",
+      "kind": "note",
+      "state": "pending",
+      "statement": "@irregular-empty",
+      "evidence": "INVENTED complete New York statement for November 2 through November 8: no account movements; account closed November 8.",
+      "legs": []
+    }
+  ],
+  "rows": {
+    "statements": [
+      {
+        "statement_id": "@irregular-first",
+        "account_id": "@P",
+        "institution": "Invented Fixture Institution",
+        "source_class": "statement",
+        "period_start": "2026-10-20",
+        "period_end": "2026-11-01",
+        "stated_currency": "USD",
+        "source_format": "json",
+        "is_eclipsed": false,
+        "coverage_basis": "settled-units",
+        "declaration_id": "@declaration:P"
+      },
+      {
+        "statement_id": "@irregular-empty",
+        "account_id": "@P",
+        "institution": "Invented Fixture Institution",
+        "source_class": "statement",
+        "period_start": "2026-11-02",
+        "period_end": "2026-11-08",
+        "stated_currency": "USD",
+        "source_format": "json",
+        "is_eclipsed": false,
+        "coverage_basis": "settled-units",
+        "declaration_id": "@declaration:P"
+      }
+    ]
+  }
+}

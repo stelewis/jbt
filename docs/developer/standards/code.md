@@ -51,9 +51,9 @@ Goals:
 - **Fail-fast contracts**: validate inputs at boundaries; raise actionable errors with file/line context.
 - **Strong internal types**: use dedicated types for identifiers and vocabularies; keep conversion at edges.
 - **Explicit imports**: prefer importing exact module paths; keep dependency graphs readable and cycle-resistant.
-- **Schema evolution by version bump**: change runtime schemas intentionally and update fixtures/tests accordingly.
+- **Evidence-driven schema evolution**: revise early baselines when processor evidence requires it; update tests, fixtures, and consumers together. Version changed meanings only for durable snapshots.
 - **Structured error variants**: errors crossing module or service boundaries should be a closed set of named variants with structured context (Rust-`enum`-style). In Python, prefer distinct exception or result types over free-form strings and catch-all exceptions.
-- **No runtime migrations / backward compatibility**: if a schema or contract changes, break intentionally and update the callers/fixtures rather than carrying adapters in core code.
+- **No speculative migrations / backward compatibility**: do not preserve internal seed shapes or carry adapters in code. For durable inputs, add explicit, reviewed conversions when historical meaning must remain readable.
 - **Narrow interfaces**: depend on small protocols/ABCs that model *what you need*, not the full dependency.
 - **Local reasoning**: keep functions small and side-effect-free where possible; push side effects to the edges.
 - **Derived data flows outward**: the core returns authoritative decisions and records; projections, views, and exports are rebuilt from that authoritative state at the edges rather than mutating it.

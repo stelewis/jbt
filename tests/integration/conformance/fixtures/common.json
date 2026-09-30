@@ -1,0 +1,150 @@
+{
+  "commodities": [
+    {
+      "id": "USD",
+      "kind": "currency"
+    },
+    {
+      "id": "EUR",
+      "kind": "currency"
+    },
+    {
+      "id": "Q",
+      "kind": "equity"
+    },
+    {
+      "id": "R",
+      "kind": "equity"
+    }
+  ],
+  "accounts": [
+    {"id": "A"},
+    {"id": "B"}
+  ],
+  "categories": {
+    "income": "income",
+    "expense": "expense",
+    "opening-equity": "equity",
+    "result": "income"
+  },
+  "counterparties": [
+    "custodian",
+    "lender"
+  ],
+  "positions": [
+    {
+      "id": "AQ",
+      "account": "A",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:book"
+    },
+    {
+      "id": "BQ",
+      "account": "B",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:book"
+    },
+    {
+      "id": "AR",
+      "account": "A",
+      "commodity": "R",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:book"
+    },
+    {
+      "id": "cash-A",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "cash-B",
+      "account": "B",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "eur-A",
+      "account": "A",
+      "commodity": "EUR",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "debt",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "lender",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "margin",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity",
+      "purpose": "collateral"
+    }
+  ],
+  "policies": [
+    {
+      "id": "fees",
+      "kind": "fee_attribution",
+      "payload": {
+        "method": "pro_rata_units",
+        "acquisition_treatment": "expensed",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        },
+        "slices": []
+      }
+    },
+    {
+      "id": "book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@AQ",
+          "@AR",
+          "@BQ"
+        ],
+        "method": "FIFO",
+        "acquisition_date_role": "traded",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    }
+  ],
+  "events": [],
+  "rows": {}
+}

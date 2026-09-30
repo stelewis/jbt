@@ -1,100 +1,57 @@
 # Architecture
 
-<!-- TODO: Update this document to reflect the current architecture -->
+`jbt` has a contract implementation and a synthetic conformance harness, not an implemented financial build pipeline. Its foundations validate exact values, identities, declarations, financial rows, and complete static artifacts. Hand-authored expected records exercise those boundaries without pretending that a parser, merge engine, or booking processor produced them.
 
-Use this document to describe the durable technical shape of the project.
+The [target architecture](../design/target-architecture.md) describes the intended pipeline. [Delivery](../plans/delivery.md) distinguishes contract proof, boundary feasibility, and later processor proof.
 
-Focus on stable boundaries, responsibilities, and interactions. Do not turn this page into an implementation diary.
+## Dependency direction
 
-## Summary
+| Boundary | Owns | Dependencies |
+| --- | --- | --- |
+| `jbt.domain` | Bounded exact arithmetic, explicit money states, civil time, stable identities, canonical encodings, correction guards | Python standard library; no IO, environment, plugin loader, or sink |
+| `jbt.contracts` | Versioned table catalog, closed JSON schemas, declaration and cross-record validation | Domain values and jsonschema; packaged schema data |
+| `jbt.artifacts` | Explicit Parquet types, static snapshot assembly, integrity, logical content digests, scoped Beancount projection | Domain and contracts; PyArrow at the file boundary |
+| Independent conformance consumer | Read pinned files, validate/replay published determinations, exercise consumer policy | DuckDB and independently implemented arithmetic; no `jbt` imports |
 
-<!--
-Write 2-5 short paragraphs that explain:
-- the overall architecture style
-- the main runtime pieces or subsystems
-- how requests, data, or work flow through the system
-- what should stay true even as implementation details change
--->
+Import exact owning modules. Package initializers do not load native adapters or re-export their APIs. The consumer shares the published specification, not the producer's validator, serializer, arithmetic, or financial choices.
 
-## System Boundaries
+## Exactness and identity
 
-<!--
-Describe the major boundaries in the system.
+Finite financial values retain a canonical coefficient, nonnegative scale, and separately stated source precision. Arithmetic admits bounded intermediates before calculation, retains rational values until an explicit rounding point, and reports unavailable components separately from known zero and inapplicable values. The [numeric contract](../design/analysis-boundary.md#exact-decimals-and-query-arithmetic) owns capacity and rounding semantics.
 
-Useful prompts:
-- What is inside the project boundary?
-- What external systems, APIs, queues, databases, or files does it depend on?
-- Which responsibilities belong here and which explicitly do not?
--->
+Economic identity uses domain-separated canonical anchors and stable child keys. Source authority, changed values, display labels, and replay sequence do not choose identities. Explicit membership and reviewed merge/split transitions are inputs; the foundations do not discover duplicates or silently follow retired identities when applying corrections.
 
-## Main Components
+Generated identity framing and wire JSON serve different purposes. Declaration revision digests cover canonical typed JSON; row/guard and manifest encodings preserve typed meaning while rendering integer fields as canonical decimal strings. Schema JSON retains native integer constraints. Callers select the encoding explicitly; decoders do not accept alternate encodings as compatibility conveniences.
 
-<!--
-List the durable components or layers and what each owns.
+## Static artifact assembly
 
-Prefer responsibilities over module names. Example categories might include:
-- interface layer
-- application or orchestration layer
-- domain logic
-- persistence or integration layer
-- background processing
--->
+`assemble_snapshot` receives the complete non-build table set, explicit entity build facts, retained interpretation resources, and writer settings. It validates rows and metadata and writes into a caller-owned empty directory:
 
-## Data And Control Flow
+1. Serialize the schema resources and write non-build Parquet tables, including typed empty tables.
+2. Record byte and logical table digests, retained inputs, configuration, checks, and execution settings in the manifest.
+3. Hash the manifest and write `build.parquet` with that digest.
+4. Write the descriptor last, covering all payload bytes without a checksum cycle.
 
-<!--
-Explain the important flows through the system.
+The caller pins the descriptor checksum outside the artifact. Readers select that descriptor once; directory discovery is not snapshot selection. Byte integrity is not semantic validity: conformance tests also alter rows and recompute mechanical checksums to exercise independent schema and relationship failures.
 
-Cover the flows that matter to future maintainers, such as:
-- request or command handling
-- validation and error handling paths
-- persistence or event publication
-- external integration boundaries
--->
+Financial-content identity includes every retained semantic schema, not only Parquet column definitions. Execution identity separately includes the actual writer settings and toolchain. Fresh-process tests vary input-map enumeration, hash seed, working directory, and locale while requiring identical snapshot bytes under the same toolchain.
 
-## Key Invariants
+The static assembler does not implement exclusive writers, acquisition recovery, durable renames, or atomic replacement of a published generation. Those require the later execution slice. A returned static artifact is not evidence that a private financial project can be restored or that an interrupted runtime publisher is safe.
 
-<!--
-Document the architectural rules that should remain true.
+## Sinks and consumers
 
-Examples:
-- which layer may call which other layer
-- where validation must happen
-- where side effects are allowed
-- transaction or consistency boundaries
-- tenancy, security, or audit guarantees
--->
+Parquet preserves the shared model directly, not a ledger-shaped intermediate. Beancount is a scoped projection of already determined weights and inventory slices. It cannot pick lots, invent basis, infer missing dates, or insert a rounding plug. Unsupported representations raise named sink limitations while leaving the upstream record unchanged.
 
-## Operational Considerations
+The ledger conformance tests cover explicit signed lots, finite-cost action removals/readditions, transfers, disposal gains, mixed consideration, notes, declaration lifetimes, and supported unit assertions. Reference/pool inventory and transactions with differing posting dates remain outside this projection; it does not manufacture inventory costs or clearing legs. Real-loader probes distinguish negative market-price directives, which are supported, from negative posting-price annotations, which Beancount rejects. An unvalued exchange cannot be made balanced by inventing a price.
 
-<!--
-Capture durable runtime concerns such as:
-- scaling constraints
-- performance-sensitive paths
-- resilience expectations
-- observability requirements
-- deployment assumptions
--->
+The real Beancount loader demonstrates a consequential limit: total cost 10 over three units becomes a finite rounded unit cost. The exact source total and partial allocations therefore cannot be certified by accepting Beancount's inferred tolerance. This case remains exact in the tabular contract and explicitly unsupported by the scoped ledger projection.
 
-## Security And Trust Boundaries
+The independent reader folds recorded steps atomically and reconstructs inventory, component lineage, quantity positions, references, and scoped assertions. It does not apply action ratios again or calculate another settlement. Consumer-specific valuation, ownership, flow perimeter, or matching choices are explicit inputs to separate conformance examples, not new upstream determinations.
 
-<!--
-Document the trust model for the system.
+## Contract conformance
 
-Cover:
-- authentication and authorization boundaries
-- sensitive data handling
-- untrusted inputs and validation expectations
-- secrets, keys, or credential usage patterns
--->
+Run the [contract workflow](./tools/local-workflows.md#contract-conformance) to test the implemented boundaries. Fixture expectations are independently calculated; mechanically expanding aliases or decimal columns does not create a financial oracle.
 
-## Related Records
+The [coverage index](../../tests/integration/conformance/fixtures/index.json) records the version-1 structural proofs and each later processor responsibility. The ordinary suite requires every indexed obligation to be met, every table to have a nonempty specimen, and every complete case to pass real snapshot publication and independent replay. It also checks prior/replacement/retracted correction snapshots and feeds verified artifacts into explicit ownership, authority, valuation, FX, performance, and alternate-matching examples.
 
-<!--
-Link to ADRs and other durable docs that define architectural decisions or public contracts.
-
-Examples:
-- docs/adr/0007-some-decision.md
-- docs/developer/context.md
-- docs/developer/versioning.md
--->
+The conformance suite establishes representation, value/identity rules, and real boundary feasibility. It does not certify unimplemented parsers, booking or action processors, durable publication, recovery execution, or jurisdictional models. The version-1 schema is a working baseline, not a veto on corrections found by those processors. Revise it with the fixtures and readers when evidence warrants; once durable snapshots are supported externally, distinguish changed meanings by version and provide reviewed conversion only where those historical inputs must remain usable.

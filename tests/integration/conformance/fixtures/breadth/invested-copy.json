@@ -1,0 +1,5 @@
+{
+  "extends": "compound-expensed.json",
+  "case_id": "breadth/invested-copy",
+  "entity": "owner-b"
+}

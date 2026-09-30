@@ -1,0 +1,549 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/perpetual",
+  "commodities": [
+    {
+      "id": "BTC",
+      "kind": "crypto"
+    },
+    {
+      "id": "PERP",
+      "kind": "contract",
+      "fields": {
+        "contract_multiplier": {
+          "n": "100"
+        },
+        "terms_declaration_id": "@declaration:inverse"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "btc-cash",
+      "account": "A",
+      "commodity": "BTC",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "btc-margin",
+      "account": "A",
+      "commodity": "BTC",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity",
+      "purpose": "collateral"
+    },
+    {
+      "id": "perpetual",
+      "account": "A",
+      "commodity": "PERP",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "reference",
+      "inventory": "individual",
+      "booking": "@declaration:perp-book",
+      "terms": "@declaration:inverse"
+    }
+  ],
+  "policies": [
+    {
+      "id": "perp-fees",
+      "kind": "fee_attribution",
+      "payload": {
+        "method": "pro_rata_units",
+        "acquisition_treatment": "attribution_only",
+        "rounding": {
+          "scale": 8,
+          "mode": "half_even",
+          "residual": "final_slice"
+        },
+        "slices": []
+      }
+    },
+    {
+      "id": "perp-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@perpetual"
+        ],
+        "method": "STRICT",
+        "acquisition_date_role": "posted",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:perp-fees",
+        "rounding": {
+          "scale": 8,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    },
+    {
+      "id": "inverse",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@PERP",
+        "payoff": {
+          "kind": "inverse_difference",
+          "reference_commodity_id": "@USD",
+          "settlement_commodity_id": "@BTC",
+          "multiplier": {
+            "n": "100"
+          }
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "final",
+          "reference_reset": "on_final_variation",
+          "rounding": {
+            "scale": 8,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "separate_position",
+          "position_ids": [
+            "@btc-margin",
+            "@margin"
+          ],
+          "commodity_ids": [
+            "@BTC",
+            "@USD"
+          ]
+        },
+        "expiry": null,
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:perp-open"
+          }
+        ]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "One inverse contract, multiplier 100, original reference 100 USD/BTC. Final variation at 200 settles 100*(1/100-1/200)=0.5 BTC and resets reference to 200.",
+    "Two funding entries -0.01 and +0.02 BTC are original cash observations, not changes to reference or contract units.",
+    "Venue liquidation at 125 settles only 100*(1/200-1/125)=-0.3 BTC. Total trading result 0.2 BTC, not recomputed opening-to-close plus prior variation.",
+    "Collateral begins 1 BTC and releases 0.25 BTC. Ending collateral 0.75 and free cash 0.5-0.01+0.02-0.3+0.25=0.46 BTC; no contract expiry is invented."
+  ],
+  "expected_answers": {
+    "quantities": {
+      "perpetual": "0",
+      "btc-cash": "0.46",
+      "btc-margin": "0.75"
+    },
+    "settlement_total": "0.2",
+    "category_amounts": {
+      "result": "-0.2",
+      "expense": "0.01",
+      "income": "-0.02"
+    },
+    "coverage": [
+      "inverse_perpetual",
+      "no_expiry",
+      "repeated_funding",
+      "venue_liquidation",
+      "cross_margin_collateral",
+      "settlement_adjusted_reference"
+    ]
+  },
+  "events": [
+    {
+      "id": "perp-open",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED perpetual confirmation: one long inverse PERP with USD 100 face multiplier and initial USD/BTC reference 100; final variation in BTC, no expiry.",
+      "legs": [
+        {
+          "id": "perp-entry-leg",
+          "position": "perpetual",
+          "commodity": "PERP",
+          "amount": "1",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "perp-acq",
+          "kind": "acquisition",
+          "method": "@declaration:perp-book",
+          "changes": [
+            {
+              "id": "perp-entry",
+              "role": "target",
+              "posting": "perp-entry-leg",
+              "position": "perpetual",
+              "lot": "IL",
+              "units": "1",
+              "principal": null,
+              "capitalized_fee": null,
+              "expensed_fee": null
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@IL",
+            "commodity_id": "@PERP",
+            "creation_step_id": "@step:perp-open",
+            "origin_posting_id": "@perp-entry-leg",
+            "origin_key": "inverse-entry",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": null
+          }
+        ],
+        "reference_changes": [
+          {
+            "reference_change_id": "@inverse-entry",
+            "step_id": "@step:perp-open",
+            "position_id": "@perpetual",
+            "lot_id": "@IL",
+            "change_kind": "entry",
+            "units": {
+              "n": "1"
+            },
+            "reference_after": {
+              "n": "100"
+            },
+            "reference_commodity_id": "@USD",
+            "terms_declaration_id": "@declaration:inverse"
+          }
+        ]
+      }
+    },
+    {
+      "id": "collateral",
+      "date": "2026-01-02",
+      "operation": "opening",
+      "kind": "opening",
+      "evidence": "INVENTED declared opening cross-margin collateral balance 1 BTC; USD collateral relationship is separate and zero.",
+      "legs": [
+        {
+          "id": "btc-collateral",
+          "position": "btc-margin",
+          "commodity": "BTC",
+          "amount": "1",
+          "role": "collateral",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "1",
+              "commodity": "BTC"
+            }
+          ]
+        },
+        {
+          "id": "btc-equity",
+          "category": "opening-equity",
+          "commodity": "BTC",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-1",
+              "commodity": "BTC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "variation",
+      "date": "2026-01-03",
+      "operation": "reference_reset",
+      "evidence": "INVENTED exchange final variation at USD/BTC 200: +0.5 BTC paid and reference resets from 100 to 200.",
+      "legs": [
+        {
+          "id": "inverse-cash",
+          "position": "btc-cash",
+          "commodity": "BTC",
+          "amount": "0.5",
+          "role": "variation_margin",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "0.5",
+              "commodity": "BTC"
+            }
+          ]
+        },
+        {
+          "id": "inverse-result",
+          "category": "result",
+          "commodity": "BTC",
+          "amount": "-0.5",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-0.5",
+              "commodity": "BTC"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "reference_changes": [
+          {
+            "reference_change_id": "@inverse-reset",
+            "step_id": "@step:variation",
+            "position_id": "@perpetual",
+            "lot_id": "@IL",
+            "change_kind": "reset",
+            "units": {
+              "n": "1"
+            },
+            "reference_before": {
+              "n": "100"
+            },
+            "reference_after": {
+              "n": "200"
+            },
+            "settlement_reference": {
+              "n": "200"
+            },
+            "reference_commodity_id": "@USD",
+            "terms_declaration_id": "@declaration:inverse"
+          }
+        ],
+        "reference_settlements": [
+          {
+            "reference_change_id": "@inverse-reset",
+            "settlement_posting_id": "@inverse-cash",
+            "amount": {
+              "n": "0.5"
+            },
+            "commodity_id": "@BTC"
+          }
+        ]
+      }
+    },
+    {
+      "id": "funding-paid",
+      "date": "2026-01-04",
+      "operation": "boundary",
+      "evidence": "INVENTED funding interval one: BTC 0.01 charged, contract reference and units unchanged.",
+      "legs": [
+        {
+          "id": "funding-debit",
+          "position": "btc-cash",
+          "commodity": "BTC",
+          "amount": "-0.01",
+          "role": "funding",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-0.01",
+              "commodity": "BTC"
+            }
+          ]
+        },
+        {
+          "id": "funding-expense",
+          "category": "expense",
+          "commodity": "BTC",
+          "amount": "0.01",
+          "role": "funding",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "0.01",
+              "commodity": "BTC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "funding-received",
+      "date": "2026-01-05",
+      "operation": "boundary",
+      "evidence": "INVENTED funding interval two: BTC 0.02 received, no reference reset.",
+      "legs": [
+        {
+          "id": "funding-credit",
+          "position": "btc-cash",
+          "commodity": "BTC",
+          "amount": "0.02",
+          "role": "funding",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "0.02",
+              "commodity": "BTC"
+            }
+          ]
+        },
+        {
+          "id": "funding-income",
+          "category": "income",
+          "commodity": "BTC",
+          "amount": "-0.02",
+          "role": "funding",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-0.02",
+              "commodity": "BTC"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "liquidation",
+      "date": "2026-01-06",
+      "operation": "reduction",
+      "evidence": "INVENTED venue-initiated liquidation: inverse PERP 1 closes at 125 after final reset 200; BTC 0.3 paid, no expiry event.",
+      "legs": [
+        {
+          "id": "inverse-close-leg",
+          "position": "perpetual",
+          "commodity": "PERP",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "inverse-close-cash",
+          "position": "btc-cash",
+          "commodity": "BTC",
+          "amount": "-0.3",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-0.3",
+              "commodity": "BTC"
+            }
+          ]
+        },
+        {
+          "id": "inverse-close-result",
+          "category": "result",
+          "commodity": "BTC",
+          "amount": "0.3",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "0.3",
+              "commodity": "BTC"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "inverse-reduce",
+          "kind": "reduction",
+          "method": "@declaration:perp-book",
+          "changes": [
+            {
+              "id": "inverse-exit",
+              "role": "source",
+              "posting": "inverse-close-leg",
+              "position": "perpetual",
+              "lot": "IL",
+              "units": "-1",
+              "principal": null,
+              "capitalized_fee": null,
+              "expensed_fee": null
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@inverse-disposal",
+            "allocation_id": "@inverse-reduce",
+            "proceeds_total": {
+              "n": "-0.3"
+            },
+            "proceeds_commodity_id": "@BTC",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:perp-fees"
+          }
+        ],
+        "reference_changes": [
+          {
+            "reference_change_id": "@inverse-close",
+            "step_id": "@step:liquidation",
+            "position_id": "@perpetual",
+            "lot_id": "@IL",
+            "change_kind": "close",
+            "units": {
+              "n": "1"
+            },
+            "reference_before": {
+              "n": "200"
+            },
+            "settlement_reference": {
+              "n": "125"
+            },
+            "reference_commodity_id": "@USD",
+            "terms_declaration_id": "@declaration:inverse"
+          }
+        ],
+        "reference_settlements": [
+          {
+            "reference_change_id": "@inverse-close",
+            "settlement_posting_id": "@inverse-close-cash",
+            "amount": {
+              "n": "-0.3"
+            },
+            "commodity_id": "@BTC"
+          }
+        ]
+      }
+    },
+    {
+      "id": "margin-release",
+      "date": "2026-01-07",
+      "operation": "quantity",
+      "evidence": "INVENTED collateral release BTC 0.25 transferred to free balance, not funding or trading result.",
+      "legs": [
+        {
+          "id": "margin-btc-out",
+          "position": "btc-margin",
+          "commodity": "BTC",
+          "amount": "-0.25",
+          "role": "collateral",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-0.25",
+              "commodity": "BTC"
+            }
+          ]
+        },
+        {
+          "id": "margin-btc-in",
+          "position": "btc-cash",
+          "commodity": "BTC",
+          "amount": "0.25",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "0.25",
+              "commodity": "BTC"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,264 @@
+{
+  "extends": "compound-expensed.json",
+  "case_id": "compound-backfill",
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "32",
+        "principal": "80",
+        "capitalized_fee": "0",
+        "expensed_fee": "1.60"
+      },
+      "BQ": {
+        "units": "3",
+        "principal": "7.50",
+        "capitalized_fee": "0",
+        "expensed_fee": "0.15"
+      }
+    },
+    "disposal": {
+      "principal": "12.50",
+      "acquisition_fee": "0.25",
+      "proceeds": "40",
+      "disposal_fee": "1",
+      "gross_result": "27.50",
+      "net_performance": "26.25"
+    },
+    "positions": {
+      "cash-A": "-102",
+      "cash-B": "39"
+    }
+  },
+  "oracle_notes": [
+    "Corrected 4:1 split: 40 Q retain principal 100 and fees 2. Move 8/40 = principal 20, fees 0.40; sell 5/40 = principal 12.50, fees 0.25. A keeps 32/principal 80; B keeps 3/principal 7.50.",
+    "Only split evidence and dependent determinations change. BUY-1 evidence and acquisition identity remain byte-identical."
+  ],
+  "replacements": [
+    {
+      "path": [
+        "events",
+        1,
+        "evidence"
+      ],
+      "value": "INVENTED corrected issuer Q notice: four new units for each old unit effective 2026-02-05; no cash."
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "legs",
+        0,
+        "amount"
+      ],
+      "value": "30"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "units"
+      ],
+      "value": "40"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "rows",
+        "corporate_action_effects",
+        0,
+        "ratio_numerator",
+        "coefficient"
+      ],
+      "value": "4"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "principal"
+      ],
+      "value": "-20"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "principal"
+      ],
+      "value": "20"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "expensed_fee"
+      ],
+      "value": "-0.40"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "expensed_fee"
+      ],
+      "value": "0.40"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "rows",
+        "inventory_fee_changes",
+        0,
+        "amount_delta",
+        "coefficient"
+      ],
+      "value": "-4"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "rows",
+        "inventory_fee_changes",
+        0,
+        "book_amount_delta",
+        "coefficient"
+      ],
+      "value": "-4"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "rows",
+        "inventory_fee_changes",
+        1,
+        "amount_delta",
+        "coefficient"
+      ],
+      "value": "4"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "rows",
+        "inventory_fee_changes",
+        1,
+        "book_amount_delta",
+        "coefficient"
+      ],
+      "value": "4"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "principal"
+      ],
+      "value": "-12.50"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "expensed_fee"
+      ],
+      "value": "-0.25"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "legs",
+        0,
+        "weights",
+        0,
+        "amount"
+      ],
+      "value": "-12.50"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "legs",
+        3,
+        "amount"
+      ],
+      "value": "-27.50"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "legs",
+        3,
+        "weights",
+        0,
+        "amount"
+      ],
+      "value": "-27.50"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "rows",
+        "inventory_fee_changes",
+        0,
+        "amount_delta"
+      ],
+      "value": {
+        "coefficient": "-25",
+        "scale": 2,
+        "source_scale": null
+      }
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "rows",
+        "inventory_fee_changes",
+        0,
+        "book_amount_delta"
+      ],
+      "value": {
+        "coefficient": "-25",
+        "scale": 2,
+        "source_scale": null
+      }
+    }
+  ]
+}

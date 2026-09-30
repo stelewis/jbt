@@ -1,0 +1,752 @@
+{
+  "extends": "common.json",
+  "case_id": "pools",
+  "positions": [
+    {
+      "id": "AP",
+      "account": "A",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "pooled",
+      "booking": "@declaration:average"
+    },
+    {
+      "id": "BP",
+      "account": "B",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "pooled",
+      "booking": "@declaration:average"
+    },
+    {
+      "id": "FXP",
+      "account": "A",
+      "commodity": "R",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "pooled",
+      "booking": "@declaration:average-fx"
+    }
+  ],
+  "policies": [
+    {
+      "id": "average",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@AP",
+          "@BP"
+        ],
+        "method": "AVERAGE",
+        "acquisition_date_role": "traded",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    },
+    {
+      "id": "average-fx",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@FXP"
+        ],
+        "method": "AVERAGE",
+        "acquisition_date_role": "traded",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    },
+    {
+      "id": "P",
+      "kind": "pool",
+      "payload": {
+        "pool_id": "@P",
+        "position_id": "@AP",
+        "book_commodity_id": "@USD",
+        "booking_declaration_id": "@declaration:average",
+        "eligibility": {
+          "mode": "all_origins",
+          "lot_ids": []
+        },
+        "fee_treatment": "expensed",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        },
+        "conversions": []
+      }
+    },
+    {
+      "id": "P2",
+      "kind": "pool",
+      "payload": {
+        "pool_id": "@P2",
+        "position_id": "@BP",
+        "book_commodity_id": "@USD",
+        "booking_declaration_id": "@declaration:average",
+        "eligibility": {
+          "mode": "all_origins",
+          "lot_ids": []
+        },
+        "fee_treatment": "expensed",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        },
+        "conversions": []
+      }
+    },
+    {
+      "id": "PFX",
+      "kind": "pool",
+      "payload": {
+        "pool_id": "@PFX",
+        "position_id": "@FXP",
+        "book_commodity_id": "@USD",
+        "booking_declaration_id": "@declaration:average-fx",
+        "eligibility": {
+          "mode": "all_origins",
+          "lot_ids": []
+        },
+        "fee_treatment": "expensed",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        },
+        "conversions": [
+          {
+            "lot_id": "@LEUR",
+            "component_kind": "principal",
+            "source_commodity_id": "@EUR",
+            "target_commodity_id": "@USD",
+            "rate": {
+              "n": "2"
+            },
+            "evidence": [
+              {
+                "kind": "source_record",
+                "id": "@source:fx-entry"
+              }
+            ],
+            "rounding": {
+              "scale": 2,
+              "mode": "half_even",
+              "residual": "final_slice"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Pool contributions 10/100 and 20/260 yield 30 Q principal 360. Reduce 12/30: principal 144; 18 Q principal 216 remain.",
+    "Transfer six of eighteen: principal 72, leaving P 12/144 and P2 6/72. Both pool contributor roots remain traceable but neither is asserted selected by the sale.",
+    "Independent foreign contribution: one R has original book principal EUR 50. Declared conversion 2 USD/EUR publishes USD 100 in PFX; L EUR denomination remains EUR."
+  ],
+  "expected_answers": {
+    "pools": {
+      "P": {
+        "units": "12",
+        "principal": "144"
+      },
+      "P2": {
+        "units": "6",
+        "principal": "72"
+      },
+      "PFX": {
+        "units": "1",
+        "principal": "100"
+      }
+    },
+    "contributors": {
+      "P": [
+        "L1",
+        "L2"
+      ],
+      "P2": [
+        "L1",
+        "L2"
+      ],
+      "PFX": [
+        "LEUR"
+      ]
+    },
+    "disposal": {
+      "principal": "144",
+      "proceeds": "180",
+      "gross_result": "36"
+    },
+    "foreign_principal": {
+      "source": "50",
+      "source_currency": "EUR",
+      "target": "100",
+      "target_currency": "USD",
+      "rate": "2"
+    }
+  },
+  "negative_cases": [
+    {
+      "id": "pool-contributor-remains",
+      "mutation": "pool_entry_remainder",
+      "owner": "pool-state",
+      "expected": "individual-remainder"
+    },
+    {
+      "id": "dual-slice-id",
+      "mutation": "both_lot_and_pool",
+      "owner": "inventory-shape",
+      "expected": "slice-exclusive"
+    },
+    {
+      "id": "missing-conversion",
+      "mutation": "remove_conversion",
+      "owner": "component-conservation",
+      "expected": "denomination-mismatch"
+    }
+  ],
+  "rows": {
+    "inventory_pools": [
+      {
+        "pool_id": "@P",
+        "position_id": "@AP",
+        "declaration_id": "@declaration:P",
+        "book_commodity_id": "@USD"
+      },
+      {
+        "pool_id": "@P2",
+        "position_id": "@BP",
+        "declaration_id": "@declaration:P2",
+        "book_commodity_id": "@USD"
+      },
+      {
+        "pool_id": "@PFX",
+        "position_id": "@FXP",
+        "declaration_id": "@declaration:PFX",
+        "book_commodity_id": "@USD"
+      }
+    ]
+  },
+  "events": [
+    {
+      "id": "pool-buy1",
+      "date": "2026-01-02",
+      "operation": "pool_entry",
+      "evidence": "INVENTED pooled fund acquisition: 10 Q, total principal USD 100, fees known zero.",
+      "legs": [
+        {
+          "id": "p-q1",
+          "position": "AP",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "p-cash1",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "p-acq1",
+          "kind": "acquisition",
+          "method": "@declaration:average",
+          "changes": [
+            {
+              "id": "p-c1",
+              "role": "target",
+              "posting": "p-q1",
+              "position": "AP",
+              "lot": "L1",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "p-entry1",
+          "kind": "pool_entry",
+          "method": "@declaration:P",
+          "changes": [
+            {
+              "id": "p-c2",
+              "role": "source",
+              "posting": "p-q1",
+              "position": "AP",
+              "lot": "L1",
+              "units": "-10",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "p-c3",
+              "role": "target",
+              "posting": "p-q1",
+              "position": "AP",
+              "pool": "P",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@L1",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:pool-buy1",
+            "origin_posting_id": "@p-q1",
+            "origin_key": "first-contribution",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pool-buy2",
+      "date": "2026-01-03",
+      "operation": "pool_entry",
+      "evidence": "INVENTED pooled fund acquisition: 20 Q, total principal USD 260, fees known zero.",
+      "legs": [
+        {
+          "id": "p-q2",
+          "position": "AP",
+          "commodity": "Q",
+          "amount": "20",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "260",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "p-cash2",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-260",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-260",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "p-acq2",
+          "kind": "acquisition",
+          "method": "@declaration:average",
+          "changes": [
+            {
+              "id": "p-c4",
+              "role": "target",
+              "posting": "p-q2",
+              "position": "AP",
+              "lot": "L2",
+              "units": "20",
+              "principal": "260",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "p-entry2",
+          "kind": "pool_entry",
+          "method": "@declaration:P",
+          "changes": [
+            {
+              "id": "p-c5",
+              "role": "source",
+              "posting": "p-q2",
+              "position": "AP",
+              "lot": "L2",
+              "units": "-20",
+              "principal": "-260",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "p-c6",
+              "role": "target",
+              "posting": "p-q2",
+              "position": "AP",
+              "pool": "P",
+              "units": "20",
+              "principal": "260",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@L2",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:pool-buy2",
+            "origin_posting_id": "@p-q2",
+            "origin_key": "second-contribution",
+            "acquisition_date": "2026-01-03",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pool-sell",
+      "date": "2026-01-04",
+      "operation": "reduction",
+      "evidence": "INVENTED pooled fund sale: 12 Q, gross USD 180, fees known zero.",
+      "legs": [
+        {
+          "id": "p-q3",
+          "position": "AP",
+          "commodity": "Q",
+          "amount": "-12",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-144",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "p-cash3",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "180",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "180",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "p-result",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-36",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-36",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "p-reduce",
+          "kind": "reduction",
+          "method": "@declaration:average",
+          "changes": [
+            {
+              "id": "p-c7",
+              "role": "source",
+              "posting": "p-q3",
+              "position": "AP",
+              "pool": "P",
+              "units": "-12",
+              "principal": "-144",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@p-disposal",
+            "allocation_id": "@p-reduce",
+            "proceeds_total": {
+              "n": "180"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "pool-transfer",
+      "date": "2026-01-05",
+      "operation": "transfer",
+      "evidence": "INVENTED custody transfer: six Q pooled units from A to B; no sale or purchase.",
+      "legs": [
+        {
+          "id": "p-out",
+          "position": "AP",
+          "commodity": "Q",
+          "amount": "-6",
+          "role": "principal"
+        },
+        {
+          "id": "p-in",
+          "position": "BP",
+          "commodity": "Q",
+          "amount": "6",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "p-transfer",
+          "kind": "transfer",
+          "method": "@declaration:average",
+          "changes": [
+            {
+              "id": "p-c8",
+              "role": "source",
+              "posting": "p-out",
+              "position": "AP",
+              "pool": "P",
+              "units": "-6",
+              "principal": "-72",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "p-c9",
+              "role": "target",
+              "posting": "p-in",
+              "position": "BP",
+              "pool": "P2",
+              "units": "6",
+              "principal": "72",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "links": [
+          {
+            "link_id": "@p-link",
+            "member_role": "outgoing",
+            "member_kind": "posting",
+            "member_id": "@p-out",
+            "link_kind": "transfer",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@p-link",
+            "member_role": "incoming",
+            "member_kind": "posting",
+            "member_id": "@p-in",
+            "link_kind": "transfer",
+            "origin": "derived"
+          }
+        ]
+      }
+    },
+    {
+      "id": "fx-entry",
+      "date": "2026-01-06",
+      "operation": "pool_entry",
+      "evidence": "INVENTED foreign contribution: one R acquired for EUR 50, fee zero; reviewed pool conversion quote 2 USD per EUR.",
+      "legs": [
+        {
+          "id": "fx-r",
+          "position": "FXP",
+          "commodity": "R",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "50",
+              "commodity": "EUR"
+            }
+          ]
+        },
+        {
+          "id": "fx-cash",
+          "position": "eur-A",
+          "commodity": "EUR",
+          "amount": "-50",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-50",
+              "commodity": "EUR"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "fx-acq",
+          "kind": "acquisition",
+          "method": "@declaration:average-fx",
+          "changes": [
+            {
+              "id": "fx-root",
+              "role": "target",
+              "posting": "fx-r",
+              "position": "FXP",
+              "lot": "LEUR",
+              "units": "1",
+              "principal": "50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "fx-contribute",
+          "kind": "pool_entry",
+          "method": "@declaration:PFX",
+          "changes": [
+            {
+              "id": "fx-source",
+              "role": "source",
+              "posting": "fx-r",
+              "position": "FXP",
+              "lot": "LEUR",
+              "units": "-1",
+              "principal": "-50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "fx-target",
+              "role": "target",
+              "posting": "fx-r",
+              "position": "FXP",
+              "pool": "PFX",
+              "units": "1",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@LEUR",
+            "commodity_id": "@R",
+            "creation_step_id": "@step:fx-entry",
+            "origin_posting_id": "@fx-r",
+            "origin_key": "euro-contribution",
+            "acquisition_date": "2026-01-06",
+            "book_commodity_id": "@EUR"
+          }
+        ],
+        "component_conversions": [
+          {
+            "allocation_id": "@fx-contribute",
+            "component_kind": "principal",
+            "source_amount": {
+              "n": "50"
+            },
+            "source_commodity_id": "@EUR",
+            "target_amount": {
+              "n": "100"
+            },
+            "target_commodity_id": "@USD",
+            "rate": {
+              "n": "2"
+            },
+            "method_declaration_id": "@declaration:PFX"
+          },
+          {
+            "allocation_id": "@fx-contribute",
+            "component_kind": "capitalized_fee",
+            "source_amount": {
+              "n": "0"
+            },
+            "source_commodity_id": "@EUR",
+            "target_amount": {
+              "n": "0"
+            },
+            "target_commodity_id": "@USD",
+            "rate": {
+              "n": "2"
+            },
+            "method_declaration_id": "@declaration:PFX"
+          },
+          {
+            "allocation_id": "@fx-contribute",
+            "component_kind": "expensed_fee",
+            "source_amount": {
+              "n": "0"
+            },
+            "source_commodity_id": "@EUR",
+            "target_amount": {
+              "n": "0"
+            },
+            "target_commodity_id": "@USD",
+            "rate": {
+              "n": "2"
+            },
+            "method_declaration_id": "@declaration:PFX"
+          }
+        ]
+      }
+    }
+  ]
+}

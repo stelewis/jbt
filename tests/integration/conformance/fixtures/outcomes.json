@@ -1,0 +1,497 @@
+{
+  "extends": "common.json",
+  "case_id": "outcomes",
+  "commodities": [
+    {
+      "id": "O1",
+      "kind": "contract",
+      "fields": {
+        "terms_declaration_id": "@declaration:outcome-1"
+      }
+    },
+    {
+      "id": "O2",
+      "kind": "contract",
+      "fields": {
+        "terms_declaration_id": "@declaration:outcome-2"
+      }
+    },
+    {
+      "id": "O3",
+      "kind": "contract",
+      "fields": {
+        "terms_declaration_id": "@declaration:outcome-3"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "outcome-1",
+      "account": "A",
+      "commodity": "O1",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity",
+      "terms": "@declaration:outcome-1"
+    },
+    {
+      "id": "outcome-2",
+      "account": "A",
+      "commodity": "O2",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity",
+      "terms": "@declaration:outcome-2"
+    },
+    {
+      "id": "outcome-3",
+      "account": "A",
+      "commodity": "O3",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity",
+      "terms": "@declaration:outcome-3"
+    }
+  ],
+  "policies": [
+    {
+      "id": "outcome-1",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@O1",
+        "payoff": {
+          "kind": "stated_cashflows",
+          "flows": [
+            {
+              "flow_key": "winning-redemption",
+              "date": "2026-06-30",
+              "role": "redemption",
+              "amount": {
+                "amount": {
+                  "n": "1"
+                },
+                "commodity_id": "@USD"
+              }
+            }
+          ]
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-06-30",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:resolve-outcomes"
+          }
+        ]
+      }
+    },
+    {
+      "id": "outcome-2",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@O2",
+        "payoff": {
+          "kind": "stated_cashflows",
+          "flows": [
+            {
+              "flow_key": "losing-redemption",
+              "date": "2026-06-30",
+              "role": "redemption",
+              "amount": {
+                "amount": {
+                  "n": "0"
+                },
+                "commodity_id": "@USD"
+              }
+            }
+          ]
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-06-30",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:resolve-outcomes"
+          }
+        ]
+      }
+    },
+    {
+      "id": "outcome-3",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@O3",
+        "payoff": {
+          "kind": "stated_cashflows",
+          "flows": [
+            {
+              "flow_key": "losing-redemption",
+              "date": "2026-06-30",
+              "role": "redemption",
+              "amount": {
+                "amount": {
+                  "n": "0"
+                },
+                "commodity_id": "@USD"
+              }
+            }
+          ]
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-06-30",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:resolve-outcomes"
+          }
+        ]
+      }
+    },
+    {
+      "id": "complete",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": null,
+        "payoff": {
+          "kind": "complete_set",
+          "outcome_ids": [
+            "@O1",
+            "@O2",
+            "@O3"
+          ],
+          "units_per_outcome": {
+            "n": "1"
+          },
+          "redemption": {
+            "amount": {
+              "n": "1"
+            },
+            "commodity_id": "@USD"
+          },
+          "resolution_evidence_required": true
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-06-30",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:split-outcomes"
+          }
+        ]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "One USD complete set splits into one each O1/O2/O3. These are distinct contingent instruments; relation membership emits no quantity.",
+    "Externally evidenced O1 resolution pays one USD. O2/O3 expire with zero cash. Entire set consumes USD 1 then returns USD 1; three instruments do not mean three USD.",
+    "Strategy links preserve one open, two rolls and close; their roles neither sort economic order nor generate inventory."
+  ],
+  "expected_answers": {
+    "outcomes_before_resolution": {
+      "O1": "1",
+      "O2": "1",
+      "O3": "1"
+    },
+    "outcomes_after_resolution": {
+      "O1": "0",
+      "O2": "0",
+      "O3": "0"
+    },
+    "cash_net": "0",
+    "complete_set_members": 3,
+    "strategy_members": 4,
+    "strategy_rolls": 2
+  },
+  "negative_cases": [
+    {
+      "id": "missing-outcome",
+      "mutation": "remove_outcome_member",
+      "owner": "complete-set-terms",
+      "expected": "exhaustive-membership"
+    },
+    {
+      "id": "two-opens",
+      "mutation": "duplicate_strategy_open",
+      "owner": "link-cardinality",
+      "expected": "one-open"
+    }
+  ],
+  "rows": {
+    "links": [
+      {
+        "link_id": "@complete-link",
+        "member_role": "outcome",
+        "member_kind": "commodity",
+        "member_id": "@O1",
+        "link_kind": "complete_set",
+        "origin": "declaration",
+        "terms_declaration_id": "@declaration:complete"
+      },
+      {
+        "link_id": "@complete-link",
+        "member_role": "outcome",
+        "member_kind": "commodity",
+        "member_id": "@O2",
+        "link_kind": "complete_set",
+        "origin": "declaration",
+        "terms_declaration_id": "@declaration:complete"
+      },
+      {
+        "link_id": "@complete-link",
+        "member_role": "outcome",
+        "member_kind": "commodity",
+        "member_id": "@O3",
+        "link_kind": "complete_set",
+        "origin": "declaration",
+        "terms_declaration_id": "@declaration:complete"
+      },
+      {
+        "link_id": "@strategy",
+        "member_role": "open",
+        "member_kind": "transaction",
+        "member_id": "@split-outcomes",
+        "link_kind": "trade_chain",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@strategy",
+        "member_role": "roll",
+        "member_kind": "transaction",
+        "member_id": "@roll-one",
+        "link_kind": "trade_chain",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@strategy",
+        "member_role": "roll",
+        "member_kind": "transaction",
+        "member_id": "@roll-two",
+        "link_kind": "trade_chain",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@strategy",
+        "member_role": "close",
+        "member_kind": "transaction",
+        "member_id": "@resolve-outcomes",
+        "link_kind": "trade_chain",
+        "origin": "derived"
+      }
+    ]
+  },
+  "events": [
+    {
+      "id": "split-outcomes",
+      "date": "2026-01-02",
+      "operation": "quantity",
+      "evidence": "INVENTED prediction venue: complete set C requires one USD and issues one O1, one O2, one O3; distinct exhaustive outcomes; resolution evidence mandatory.",
+      "legs": [
+        {
+          "id": "outcome-pay",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-1",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "outcome-cost",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "o1-in",
+          "position": "outcome-1",
+          "commodity": "O1",
+          "amount": "1",
+          "role": "principal"
+        },
+        {
+          "id": "o2-in",
+          "position": "outcome-2",
+          "commodity": "O2",
+          "amount": "1",
+          "role": "principal"
+        },
+        {
+          "id": "o3-in",
+          "position": "outcome-3",
+          "commodity": "O3",
+          "amount": "1",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "roll-one",
+      "date": "2026-02-01",
+      "operation": "quantity",
+      "evidence": "INVENTED strategy checkpoint one: zero cash amendment recorded as meaningful zero-value leg.",
+      "legs": [
+        {
+          "id": "roll-one-zero",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "0",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "0",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roll-two",
+      "date": "2026-03-01",
+      "operation": "quantity",
+      "evidence": "INVENTED strategy checkpoint two: zero cash amendment distinct from first checkpoint.",
+      "legs": [
+        {
+          "id": "roll-two-zero",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "0",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "0",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "resolve-outcomes",
+      "date": "2026-06-30",
+      "operation": "quantity",
+      "evidence": "INVENTED external resolution certificate: O1 wins and pays USD 1, O2 and O3 expire with zero; each outstanding outcome unit is retired.",
+      "legs": [
+        {
+          "id": "o1-out",
+          "position": "outcome-1",
+          "commodity": "O1",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "o2-out",
+          "position": "outcome-2",
+          "commodity": "O2",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "o3-out",
+          "position": "outcome-3",
+          "commodity": "O3",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "outcome-receipt",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "outcome-income",
+          "category": "income",
+          "commodity": "USD",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-1",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

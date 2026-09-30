@@ -1,0 +1,884 @@
+{
+  "extends": "common.json",
+  "case_id": "corporate-variants",
+  "commodities": [
+    {
+      "id": "OLD",
+      "kind": "currency"
+    },
+    {
+      "id": "NEW",
+      "kind": "currency"
+    }
+  ],
+  "positions": [
+    {
+      "id": "old-cash",
+      "account": "A",
+      "commodity": "OLD",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "new-cash",
+      "account": "A",
+      "commodity": "NEW",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "policies": [
+    {
+      "id": "action-root",
+      "kind": "action_scope",
+      "payload": {
+        "commodity_id": "@Q",
+        "selection": "explicit",
+        "account_ids": [
+          "@A"
+        ],
+        "position_ids": [
+          "@AQ"
+        ],
+        "lot_ids": [
+          "@root"
+        ],
+        "pool_ids": []
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Acquire ten Q for 100, then sell two for 22: realized principal 20, gain 2, remaining eight Q/principal 80. The later reverse split must not alter that completed disposal.",
+    "The 1:5 reverse split leaves 1.6 Q and principal 80. Spinoff leaves 1.6 Q/principal 60 plus 0.8 R/principal 20; each basis term names its exact output change, not the shared allocation.",
+    "Return of capital pays 20 and reduces the surviving Q basis from 60 to 40 without disposing of units. Dividend 10 is separately received and reinvested into a new half-unit lot for 10. Final Q 2.1/principal 50; R 0.8/principal 20.",
+    "OLD 20 redenominates to NEW 10 under an explicit 2:1 legal conversion. Distinct commodity identities survive. A later Q display alias has no inventory effect and does not create a new commodity.",
+    "USD cash is -100+22+20+10-10 = -58. OLD cash is zero; NEW cash is 10. All fee components are known zero, not unavailable."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "2.1",
+        "principal": "50",
+        "capitalized_fee": "0",
+        "expensed_fee": "0"
+      },
+      "AR": {
+        "units": "0.8",
+        "principal": "20",
+        "capitalized_fee": "0",
+        "expensed_fee": "0"
+      }
+    },
+    "positions": {
+      "cash-A": "-58",
+      "old-cash": "0",
+      "new-cash": "10"
+    },
+    "released_principal": "20",
+    "pre_action_gain": "2",
+    "return_of_capital": "20",
+    "original_acquisition_date": "2026-01-02"
+  },
+  "events": [
+    {
+      "id": "acquire",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED acquisition: ten Q for USD 100, fees explicitly zero.",
+      "legs": [
+        {
+          "id": "buy-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "buy-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "purchase",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "purchase-target",
+              "role": "target",
+              "posting": "buy-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@root",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:acquire",
+            "origin_posting_id": "@buy-q",
+            "origin_key": "initial-fill",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sell-before-action",
+      "date": "2026-01-10",
+      "operation": "reduction",
+      "evidence": "INVENTED disposal before issuer actions: two Q for USD 22, zero fee, explicit released principal 20.",
+      "legs": [
+        {
+          "id": "sell-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sell-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "22",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "22",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sell-result",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-2",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-2",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "sale",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "sale-source",
+              "role": "source",
+              "posting": "sell-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "-2",
+              "principal": "-20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@sale-result",
+            "allocation_id": "@sale",
+            "proceeds_total": {
+              "n": "22"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "reverse",
+      "date": "2026-02-01",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED reverse split: one new Q for five old Q. The eight held units become 1.6; disposed units are outside the action scope.",
+      "legs": [
+        {
+          "id": "reverse-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-6.4",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "reverse-allocation",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@reverse-action",
+          "changes": [
+            {
+              "id": "reverse-source",
+              "role": "source",
+              "posting": "reverse-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "-8",
+              "principal": "-80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "reverse-target",
+              "role": "target",
+              "posting": "reverse-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "1.6",
+              "principal": "80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "corporate_actions": [
+          {
+            "action_id": "@reverse-action",
+            "action_kind": "reverse_split",
+            "commodity_id": "@Q",
+            "effective_date": "2026-02-01",
+            "txn_id": "@reverse"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@reverse-units",
+            "action_id": "@reverse-action",
+            "effect_key": "reverse-units",
+            "effect_index": 0,
+            "effect_kind": "units",
+            "input_commodity_id": "@Q",
+            "resulting_commodity_id": "@Q",
+            "ratio_numerator": {
+              "n": "1"
+            },
+            "ratio_denominator": {
+              "n": "5"
+            }
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@reverse-units",
+            "target_kind": "inventory_allocation",
+            "target_id": "@reverse-allocation",
+            "step_id": "@step:reverse",
+            "application_role": "inventory"
+          }
+        ]
+      }
+    },
+    {
+      "id": "spinoff",
+      "date": "2026-02-10",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED spinoff: retain 1.6 Q and receive 0.8 R. Reviewed economic allocation assigns USD 60 to retained Q and USD 20 to child R.",
+      "legs": [
+        {
+          "id": "spinoff-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "0",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "spinoff-r",
+          "position": "AR",
+          "commodity": "R",
+          "amount": "0.8",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "spinoff-allocation",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@spinoff-action",
+          "changes": [
+            {
+              "id": "spinoff-source",
+              "role": "source",
+              "posting": "spinoff-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "-1.6",
+              "principal": "-80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "spinoff-parent",
+              "role": "target",
+              "posting": "spinoff-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "1.6",
+              "principal": "60",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "spinoff-child",
+              "role": "target",
+              "posting": "spinoff-r",
+              "position": "AR",
+              "lot": "child",
+              "units": "0.8",
+              "principal": "20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@child",
+            "commodity_id": "@R",
+            "creation_step_id": "@step:spinoff",
+            "parent_lot_id": "@root",
+            "origin_key": "spinoff-child",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "corporate_actions": [
+          {
+            "action_id": "@spinoff-action",
+            "action_kind": "spinoff",
+            "commodity_id": "@Q",
+            "effective_date": "2026-02-10",
+            "txn_id": "@spinoff"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@spinoff-units",
+            "action_id": "@spinoff-action",
+            "effect_key": "child-units",
+            "effect_index": 0,
+            "effect_kind": "units",
+            "input_commodity_id": "@Q",
+            "resulting_commodity_id": "@R",
+            "ratio_numerator": {
+              "n": "1"
+            },
+            "ratio_denominator": {
+              "n": "2"
+            }
+          },
+          {
+            "effect_id": "@spinoff-parent-basis",
+            "action_id": "@spinoff-action",
+            "effect_key": "retained-basis",
+            "effect_index": 1,
+            "effect_kind": "basis",
+            "input_commodity_id": "@Q",
+            "basis_total": {
+              "n": "60"
+            },
+            "basis_commodity_id": "@USD",
+            "scope_declaration_id": "@declaration:action-root"
+          },
+          {
+            "effect_id": "@spinoff-child-basis",
+            "action_id": "@spinoff-action",
+            "effect_key": "child-basis",
+            "effect_index": 2,
+            "effect_kind": "basis",
+            "input_commodity_id": "@Q",
+            "basis_total": {
+              "n": "20"
+            },
+            "basis_commodity_id": "@USD",
+            "scope_declaration_id": "@declaration:action-root"
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@spinoff-units",
+            "target_kind": "inventory_allocation",
+            "target_id": "@spinoff-allocation",
+            "step_id": "@step:spinoff",
+            "application_role": "inventory"
+          },
+          {
+            "effect_id": "@spinoff-parent-basis",
+            "target_kind": "inventory_change",
+            "target_id": "@spinoff-parent",
+            "step_id": "@step:spinoff",
+            "application_role": "inventory"
+          },
+          {
+            "effect_id": "@spinoff-child-basis",
+            "target_kind": "inventory_change",
+            "target_id": "@spinoff-child",
+            "step_id": "@step:spinoff",
+            "application_role": "inventory"
+          }
+        ]
+      }
+    },
+    {
+      "id": "capital-return",
+      "date": "2026-03-01",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED non-disposal capital return USD 20; 1.6 Q retained with reviewed remaining principal USD 40.",
+      "legs": [
+        {
+          "id": "capital-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "0",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "capital-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "20",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "capital-allocation",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@capital-action",
+          "changes": [
+            {
+              "id": "capital-source",
+              "role": "source",
+              "posting": "capital-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "-1.6",
+              "principal": "-60",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "capital-target",
+              "role": "target",
+              "posting": "capital-q",
+              "position": "AQ",
+              "lot": "root",
+              "units": "1.6",
+              "principal": "40",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "corporate_actions": [
+          {
+            "action_id": "@capital-action",
+            "action_kind": "return_of_capital",
+            "commodity_id": "@Q",
+            "effective_date": "2026-03-01",
+            "txn_id": "@capital-return"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@capital-cash-effect",
+            "action_id": "@capital-action",
+            "effect_key": "cash",
+            "effect_index": 0,
+            "effect_kind": "cash",
+            "input_commodity_id": "@Q",
+            "cash_total": {
+              "n": "20"
+            },
+            "cash_commodity_id": "@USD",
+            "scope_declaration_id": "@declaration:action-root"
+          },
+          {
+            "effect_id": "@capital-basis-effect",
+            "action_id": "@capital-action",
+            "effect_key": "remaining-basis",
+            "effect_index": 1,
+            "effect_kind": "basis",
+            "input_commodity_id": "@Q",
+            "basis_total": {
+              "n": "40"
+            },
+            "basis_commodity_id": "@USD",
+            "scope_declaration_id": "@declaration:action-root"
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@capital-cash-effect",
+            "target_kind": "posting",
+            "target_id": "@capital-cash",
+            "step_id": "@step:capital-return",
+            "application_role": "consideration"
+          },
+          {
+            "effect_id": "@capital-basis-effect",
+            "target_kind": "inventory_change",
+            "target_id": "@capital-target",
+            "step_id": "@step:capital-return",
+            "application_role": "inventory"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dividend",
+      "date": "2026-03-10",
+      "operation": "quantity",
+      "evidence": "INVENTED cash dividend USD 10, separate from the elected reinvestment.",
+      "legs": [
+        {
+          "id": "dividend-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "10",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "10",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "dividend-income",
+          "category": "income",
+          "commodity": "USD",
+          "amount": "-10",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-10",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reinvest",
+      "date": "2026-03-11",
+      "operation": "acquisition",
+      "evidence": "INVENTED elected reinvestment purchases half a Q for USD 10, a new acquisition rather than another return of capital.",
+      "legs": [
+        {
+          "id": "reinvest-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "0.5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "reinvest-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-10",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-10",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "reinvestment",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "reinvest-target",
+              "role": "target",
+              "posting": "reinvest-q",
+              "position": "AQ",
+              "lot": "reinvested",
+              "units": "0.5",
+              "principal": "10",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@reinvested",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:reinvest",
+            "origin_posting_id": "@reinvest-q",
+            "origin_key": "reinvested-fill",
+            "acquisition_date": "2026-03-11",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "old-opening",
+      "date": "2026-04-01",
+      "operation": "quantity",
+      "evidence": "INVENTED retained opening: OLD currency 20.",
+      "legs": [
+        {
+          "id": "old-open",
+          "position": "old-cash",
+          "commodity": "OLD",
+          "amount": "20",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "20",
+              "commodity": "OLD"
+            }
+          ]
+        },
+        {
+          "id": "old-equity",
+          "category": "opening-equity",
+          "commodity": "OLD",
+          "amount": "-20",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "OLD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "redenominate",
+      "date": "2026-04-02",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED legal currency conversion: every two OLD units become one distinct NEW unit, with no economic gain.",
+      "legs": [
+        {
+          "id": "old-out",
+          "position": "old-cash",
+          "commodity": "OLD",
+          "amount": "-20",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "OLD"
+            }
+          ]
+        },
+        {
+          "id": "new-in",
+          "position": "new-cash",
+          "commodity": "NEW",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "20",
+              "commodity": "OLD"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "corporate_actions": [
+          {
+            "action_id": "@redenomination-action",
+            "action_kind": "redenomination",
+            "commodity_id": "@OLD",
+            "effective_date": "2026-04-02",
+            "txn_id": "@redenominate"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@redenomination-units",
+            "action_id": "@redenomination-action",
+            "effect_key": "new-currency",
+            "effect_index": 0,
+            "effect_kind": "units",
+            "input_commodity_id": "@OLD",
+            "resulting_commodity_id": "@NEW",
+            "ratio_numerator": {
+              "n": "1"
+            },
+            "ratio_denominator": {
+              "n": "2"
+            }
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@redenomination-units",
+            "target_kind": "posting",
+            "target_id": "@new-in",
+            "step_id": "@step:redenominate",
+            "application_role": "inventory"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rename",
+      "date": "2026-05-01",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED display-only change from Q to Q-NEW, also shown as localized alias Q-\u00e9; no exchange, new commodity, units, or basis.",
+      "legs": [],
+      "rows": {
+        "commodity_symbols": [
+          {
+            "symbol_id": "@old-symbol",
+            "commodity_id": "@Q",
+            "symbol": "Q",
+            "valid_from": "2026-01-01",
+            "valid_to": "2026-05-01"
+          },
+          {
+            "symbol_id": "@new-symbol",
+            "commodity_id": "@Q",
+            "symbol": "Q-NEW",
+            "valid_from": "2026-05-01"
+          },
+          {
+            "symbol_id": "@localized-symbol",
+            "commodity_id": "@Q",
+            "symbol": "Q-\u00e9",
+            "valid_from": "2026-05-01"
+          }
+        ],
+        "corporate_actions": [
+          {
+            "action_id": "@rename-action",
+            "action_kind": "symbol_change",
+            "commodity_id": "@Q",
+            "effective_date": "2026-05-01",
+            "txn_id": "@rename"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@rename-effect",
+            "action_id": "@rename-action",
+            "effect_key": "display-alias",
+            "effect_index": 0,
+            "effect_kind": "symbol",
+            "input_commodity_id": "@Q",
+            "symbol_id": "@new-symbol"
+          }
+        ]
+      }
+    }
+  ]
+}

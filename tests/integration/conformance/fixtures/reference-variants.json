@@ -1,0 +1,344 @@
+{
+  "extends": "reference.json",
+  "case_id": "reference-variants",
+  "replacements": [
+    {
+      "path": ["policies", 3, "payload", "position_ids"],
+      "value": ["@future", "@future-B"]
+    }
+  ],
+  "commodities": [
+    {
+      "id": "FC",
+      "kind": "contract",
+      "fields": {
+        "contract_multiplier": {"n": "10"},
+        "terms_declaration_id": "@declaration:collateral-terms"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "future-B",
+      "account": "B",
+      "commodity": "F",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "reference",
+      "inventory": "individual",
+      "booking": "@declaration:reference-book",
+      "terms": "@declaration:linear"
+    },
+    {
+      "id": "collateral-future",
+      "account": "A",
+      "commodity": "FC",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "reference",
+      "inventory": "individual",
+      "booking": "@declaration:collateral-book",
+      "terms": "@declaration:collateral-terms"
+    }
+  ],
+  "policies": [
+    {
+      "id": "collateral-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": ["@collateral-future"],
+        "method": "FIFO",
+        "acquisition_date_role": "traded",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:reference-fees",
+        "rounding": {"scale": 2, "mode": "half_even", "residual": "final_slice"}
+      }
+    },
+    {
+      "id": "collateral-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@FC",
+        "payoff": {
+          "kind": "linear_difference",
+          "reference_commodity_id": "@USD",
+          "settlement_commodity_id": "@USD",
+          "multiplier": {"n": "10"}
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "collateral_only",
+          "reference_reset": "none",
+          "rounding": {"scale": 2, "mode": "half_even", "residual": "final_slice"}
+        },
+        "collateral": {
+          "mode": "separate_position",
+          "position_ids": ["@margin"],
+          "commodity_ids": ["@USD"]
+        },
+        "expiry": null,
+        "deliverables": [],
+        "evidence": [{"kind": "source_record", "id": "@source:collateral-contract-open"}]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Four final-variation contracts at 100 split into lots one and three. Reset only the one-contract lot at 101: cash 10; the other three retain reference 100.",
+    "Move two of the three unreset contracts to account B without settlement; source retains one at 100 and destination receives two at 100.",
+    "At 105 close four longs: (105-101)*10=40 plus (105-100)*10*3=150. Open two shorts at 105; cover at 101: (105-101)*10*2=80. Added settlements total 280.",
+    "The original fees of USD 4 and EUR 2 are attributed pro rata by units: ONE receives USD 1 and EUR 0.5, THREE receives USD 3 and EUR 1.5, without FX conversion or capitalized reference cost.",
+    "The other contract uses collateral variation. Moving USD 12 from cash to margin raises collateral from 160 to 172 but neither earns profit nor resets its reference at 100."
+  ],
+  "expected_answers": {
+    "settlement_total": "330",
+    "additional_settlement_total": "280",
+    "collateral": "172",
+    "collateral_only_contract_reference": "100",
+    "final_variation_references_after_partial": {
+      "variant-one": "101",
+      "variant-three": "100"
+    },
+    "transferred_reference": "100",
+    "short_open_units": "-2",
+    "final_open_contract_units": "0",
+    "original_fees": {"USD": "4", "EUR": "2"},
+    "unconverted_fee_book_amounts": null
+  },
+  "negative_cases": [
+    {
+      "id": "partial-reset-without-branch",
+      "mutation": "reset_one_of_three_units_on_same_lot",
+      "owner": "reference-continuity",
+      "expected": "partial_reset_requires_branch"
+    },
+    {
+      "id": "transfer-reprices-destination",
+      "mutation": "transferred_reference_after_102",
+      "owner": "reference-transfer",
+      "expected": "reference_transfer_continuity"
+    },
+    {
+      "id": "collateral-only-reset",
+      "mutation": "collateral_terms_on_final_variation",
+      "owner": "contract-terms",
+      "expected": "variation_reset"
+    },
+    {
+      "id": "eur-fee-converted-without-evidence",
+      "mutation": "invent_eur_book_amount",
+      "owner": "original-fee-attribution",
+      "expected": "reference_fee_book_amount"
+    }
+  ],
+  "events": [
+    {
+      "id": "variant-open",
+      "date": "2026-01-06",
+      "operation": "acquisition",
+      "evidence": "INVENTED four long F at USD reference 100 in lots ONE and THREE; original fees USD 4 and EUR 2, no FX quote.",
+      "legs": [
+        {"id": "variant-open-f", "position": "future", "commodity": "F", "amount": "4", "role": "principal"},
+        {"id": "variant-usd-fee", "position": "cash-A", "commodity": "USD", "amount": "-4", "role": "fee"},
+        {"id": "variant-usd-expense", "category": "expense", "commodity": "USD", "amount": "4", "role": "fee"},
+        {"id": "variant-eur-fee", "position": "eur-A", "commodity": "EUR", "amount": "-2", "role": "fee"},
+        {"id": "variant-eur-expense", "category": "expense", "commodity": "EUR", "amount": "2", "role": "fee"}
+      ],
+      "allocations": [
+        {
+          "id": "variant-acquire-one",
+          "kind": "acquisition",
+          "method": "@declaration:reference-book",
+          "changes": [
+            {"id": "variant-one-in", "role": "target", "posting": "variant-open-f", "position": "future", "lot": "variant-one", "units": "1", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+          ]
+        },
+        {
+          "id": "variant-acquire-three",
+          "kind": "acquisition",
+          "method": "@declaration:reference-book",
+          "changes": [
+            {"id": "variant-three-in", "role": "target", "posting": "variant-open-f", "position": "future", "lot": "variant-three", "units": "3", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {"lot_id": "@variant-one", "commodity_id": "@F", "creation_step_id": "@step:variant-open", "origin_posting_id": "@variant-open-f", "origin_key": "ONE", "acquisition_date": "2026-01-06", "book_commodity_id": null},
+          {"lot_id": "@variant-three", "commodity_id": "@F", "creation_step_id": "@step:variant-open", "origin_posting_id": "@variant-open-f", "origin_key": "THREE", "acquisition_date": "2026-01-06", "book_commodity_id": null}
+        ],
+        "reference_changes": [
+          {"reference_change_id": "@variant-one-entry", "step_id": "@step:variant-open", "position_id": "@future", "lot_id": "@variant-one", "change_kind": "entry", "units": {"n": "1"}, "reference_after": {"n": "100"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"},
+          {"reference_change_id": "@variant-three-entry", "step_id": "@step:variant-open", "position_id": "@future", "lot_id": "@variant-three", "change_kind": "entry", "units": {"n": "3"}, "reference_after": {"n": "100"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"}
+        ],
+        "fee_allocations": [
+          {"fee_allocation_id": "@variant-fee-usd", "fee_posting_id": "@variant-usd-fee", "target_kind": "lot", "target_id": "@variant-one", "amount": {"n": "-1"}, "commodity_id": "@USD", "treatment": "attribution_only", "method_declaration_id": "@declaration:reference-fees"},
+          {"fee_allocation_id": "@variant-fee-usd-three", "fee_posting_id": "@variant-usd-fee", "target_kind": "lot", "target_id": "@variant-three", "amount": {"n": "-3"}, "commodity_id": "@USD", "treatment": "attribution_only", "method_declaration_id": "@declaration:reference-fees"},
+          {"fee_allocation_id": "@variant-fee-eur", "fee_posting_id": "@variant-eur-fee", "target_kind": "lot", "target_id": "@variant-one", "amount": {"n": "-0.5"}, "commodity_id": "@EUR", "treatment": "attribution_only", "method_declaration_id": "@declaration:reference-fees"},
+          {"fee_allocation_id": "@variant-fee-eur-three", "fee_posting_id": "@variant-eur-fee", "target_kind": "lot", "target_id": "@variant-three", "amount": {"n": "-1.5"}, "commodity_id": "@EUR", "treatment": "attribution_only", "method_declaration_id": "@declaration:reference-fees"}
+        ],
+        "inventory_fee_changes": [
+          {"change_id": "@variant-one-in", "fee_allocation_id": "@variant-fee-usd", "amount_delta": {"n": "-1"}},
+          {"change_id": "@variant-three-in", "fee_allocation_id": "@variant-fee-usd-three", "amount_delta": {"n": "-3"}},
+          {"change_id": "@variant-one-in", "fee_allocation_id": "@variant-fee-eur", "amount_delta": {"n": "-0.5"}},
+          {"change_id": "@variant-three-in", "fee_allocation_id": "@variant-fee-eur-three", "amount_delta": {"n": "-1.5"}}
+        ]
+      }
+    },
+    {
+      "id": "variant-partial-reset",
+      "date": "2026-01-07",
+      "operation": "reference_reset",
+      "evidence": "INVENTED final variation on ONE only, from 100 to 101; cash USD 10. THREE stays at 100.",
+      "legs": [
+        {"id": "variant-reset-cash", "position": "cash-A", "commodity": "USD", "amount": "10", "role": "variation_margin"},
+        {"id": "variant-reset-result", "category": "result", "commodity": "USD", "amount": "-10", "role": "book_result"}
+      ],
+      "rows": {
+        "reference_changes": [
+          {"reference_change_id": "@variant-one-reset", "step_id": "@step:variant-partial-reset", "position_id": "@future", "lot_id": "@variant-one", "change_kind": "reset", "units": {"n": "1"}, "reference_before": {"n": "100"}, "reference_after": {"n": "101"}, "settlement_reference": {"n": "101"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"}
+        ],
+        "reference_settlements": [
+          {"reference_change_id": "@variant-one-reset", "settlement_posting_id": "@variant-reset-cash", "amount": {"n": "10"}, "commodity_id": "@USD"}
+        ]
+      }
+    },
+    {
+      "id": "variant-transfer",
+      "date": "2026-01-08",
+      "operation": "transfer",
+      "evidence": "INVENTED transfer two THREE contracts A to B, preserving original reference 100 without cash settlement.",
+      "legs": [
+        {"id": "variant-out", "position": "future", "commodity": "F", "amount": "-2", "role": "principal"},
+        {"id": "variant-in", "position": "future-B", "commodity": "F", "amount": "2", "role": "principal"}
+      ],
+      "allocations": [
+        {
+          "id": "variant-move",
+          "kind": "transfer",
+          "method": "@declaration:reference-book",
+          "changes": [
+            {"id": "variant-move-out", "role": "source", "posting": "variant-out", "position": "future", "lot": "variant-three", "units": "-2", "principal": null, "capitalized_fee": null, "expensed_fee": null},
+            {"id": "variant-move-in", "role": "target", "posting": "variant-in", "position": "future-B", "lot": "variant-three", "units": "2", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+          ]
+        }
+      ],
+      "rows": {
+        "reference_changes": [
+          {"reference_change_id": "@variant-transfer-out", "step_id": "@step:variant-transfer", "position_id": "@future", "lot_id": "@variant-three", "change_kind": "close", "units": {"n": "2"}, "reference_before": {"n": "100"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"},
+          {"reference_change_id": "@variant-transfer-in", "step_id": "@step:variant-transfer", "position_id": "@future-B", "lot_id": "@variant-three", "change_kind": "entry", "units": {"n": "2"}, "reference_after": {"n": "100"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"}
+        ],
+        "links": [
+          {"link_id": "@variant-transfer-link", "member_role": "outgoing", "member_kind": "posting", "member_id": "@variant-out", "link_kind": "transfer", "origin": "derived"},
+          {"link_id": "@variant-transfer-link", "member_role": "incoming", "member_kind": "posting", "member_id": "@variant-in", "link_kind": "transfer", "origin": "derived"}
+        ]
+      }
+    },
+    {
+      "id": "variant-reversal",
+      "date": "2026-01-09",
+      "operation": "reduction",
+      "evidence": "INVENTED close all four longs at 105 for USD 190 variation, then open two shorts at 105.",
+      "legs": [
+        {"id": "variant-close-A", "position": "future", "commodity": "F", "amount": "-2", "role": "principal"},
+        {"id": "variant-close-B", "position": "future-B", "commodity": "F", "amount": "-2", "role": "principal"},
+        {"id": "variant-short-open", "position": "future", "commodity": "F", "amount": "-2", "role": "principal"},
+        {"id": "variant-reversal-cash", "position": "cash-A", "commodity": "USD", "amount": "190", "role": "variation_margin"},
+        {"id": "variant-reversal-result", "category": "result", "commodity": "USD", "amount": "-190", "role": "book_result"}
+      ],
+      "allocations": [
+        {"id": "variant-close-one-allocation", "kind": "reduction", "method": "@declaration:reference-book", "changes": [
+          {"id": "variant-close-one-change", "role": "source", "posting": "variant-close-A", "position": "future", "lot": "variant-one", "units": "-1", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+        ]},
+        {"id": "variant-close-three-A-allocation", "kind": "reduction", "method": "@declaration:reference-book", "changes": [
+          {"id": "variant-close-three-A-change", "role": "source", "posting": "variant-close-A", "position": "future", "lot": "variant-three", "units": "-1", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+        ]},
+        {"id": "variant-close-three-B-allocation", "kind": "reduction", "method": "@declaration:reference-book", "changes": [
+          {"id": "variant-close-three-B-change", "role": "source", "posting": "variant-close-B", "position": "future-B", "lot": "variant-three", "units": "-2", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+        ]},
+        {"id": "variant-short-allocation", "kind": "acquisition", "method": "@declaration:reference-book", "changes": [
+          {"id": "variant-short-change", "role": "target", "posting": "variant-short-open", "position": "future", "lot": "variant-short", "units": "-2", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+        ]}
+      ],
+      "rows": {
+        "disposals": [
+          {"disposal_id": "@variant-one-disposal", "allocation_id": "@variant-close-one-allocation", "proceeds_total": {"n": "40"}, "proceeds_commodity_id": "@USD", "disposal_fees_total": {"n": "0"}, "fee_attribution_declaration_id": "@declaration:reference-fees"},
+          {"disposal_id": "@variant-three-A-disposal", "allocation_id": "@variant-close-three-A-allocation", "proceeds_total": {"n": "50"}, "proceeds_commodity_id": "@USD", "disposal_fees_total": {"n": "0"}, "fee_attribution_declaration_id": "@declaration:reference-fees"},
+          {"disposal_id": "@variant-three-B-disposal", "allocation_id": "@variant-close-three-B-allocation", "proceeds_total": {"n": "100"}, "proceeds_commodity_id": "@USD", "disposal_fees_total": {"n": "0"}, "fee_attribution_declaration_id": "@declaration:reference-fees"}
+        ],
+        "lots": [
+          {"lot_id": "@variant-short", "commodity_id": "@F", "creation_step_id": "@step:variant-reversal", "origin_posting_id": "@variant-short-open", "origin_key": "SHORT", "acquisition_date": "2026-01-09", "book_commodity_id": null}
+        ],
+        "reference_changes": [
+          {"reference_change_id": "@variant-one-close", "step_id": "@step:variant-reversal", "position_id": "@future", "lot_id": "@variant-one", "change_kind": "close", "units": {"n": "1"}, "reference_before": {"n": "101"}, "settlement_reference": {"n": "105"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"},
+          {"reference_change_id": "@variant-three-A-close", "step_id": "@step:variant-reversal", "position_id": "@future", "lot_id": "@variant-three", "change_kind": "close", "units": {"n": "1"}, "reference_before": {"n": "100"}, "settlement_reference": {"n": "105"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"},
+          {"reference_change_id": "@variant-three-B-close", "step_id": "@step:variant-reversal", "position_id": "@future-B", "lot_id": "@variant-three", "change_kind": "close", "units": {"n": "2"}, "reference_before": {"n": "100"}, "settlement_reference": {"n": "105"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"},
+          {"reference_change_id": "@variant-short-entry", "step_id": "@step:variant-reversal", "position_id": "@future", "lot_id": "@variant-short", "change_kind": "entry", "units": {"n": "-2"}, "reference_after": {"n": "105"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"}
+        ],
+        "reference_settlements": [
+          {"reference_change_id": "@variant-one-close", "settlement_posting_id": "@variant-reversal-cash", "amount": {"n": "40"}, "commodity_id": "@USD"},
+          {"reference_change_id": "@variant-three-A-close", "settlement_posting_id": "@variant-reversal-cash", "amount": {"n": "50"}, "commodity_id": "@USD"},
+          {"reference_change_id": "@variant-three-B-close", "settlement_posting_id": "@variant-reversal-cash", "amount": {"n": "100"}, "commodity_id": "@USD"}
+        ]
+      }
+    },
+    {
+      "id": "variant-short-cover",
+      "date": "2026-01-10",
+      "operation": "reduction",
+      "evidence": "INVENTED cover two short F at 101 after short entry at 105; USD 80 settlement.",
+      "legs": [
+        {"id": "variant-cover-f", "position": "future", "commodity": "F", "amount": "2", "role": "principal"},
+        {"id": "variant-cover-cash", "position": "cash-A", "commodity": "USD", "amount": "80", "role": "variation_margin"},
+        {"id": "variant-cover-result", "category": "result", "commodity": "USD", "amount": "-80", "role": "book_result"}
+      ],
+      "allocations": [
+        {"id": "variant-cover-allocation", "kind": "reduction", "method": "@declaration:reference-book", "changes": [
+          {"id": "variant-cover-change", "role": "source", "posting": "variant-cover-f", "position": "future", "lot": "variant-short", "units": "2", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+        ]}
+      ],
+      "rows": {
+        "disposals": [
+          {"disposal_id": "@variant-short-disposal", "allocation_id": "@variant-cover-allocation", "proceeds_total": {"n": "80"}, "proceeds_commodity_id": "@USD", "disposal_fees_total": {"n": "0"}, "fee_attribution_declaration_id": "@declaration:reference-fees"}
+        ],
+        "reference_changes": [
+          {"reference_change_id": "@variant-short-close", "step_id": "@step:variant-short-cover", "position_id": "@future", "lot_id": "@variant-short", "change_kind": "close", "units": {"n": "-2"}, "reference_before": {"n": "105"}, "settlement_reference": {"n": "101"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"}
+        ],
+        "reference_settlements": [
+          {"reference_change_id": "@variant-short-close", "settlement_posting_id": "@variant-cover-cash", "amount": {"n": "80"}, "commodity_id": "@USD"}
+        ]
+      }
+    },
+    {
+      "id": "collateral-contract-open",
+      "date": "2026-01-11",
+      "operation": "acquisition",
+      "evidence": "INVENTED one FC at reference USD 100; variation is collateral, never final settlement.",
+      "legs": [
+        {"id": "collateral-contract-leg", "position": "collateral-future", "commodity": "FC", "amount": "1", "role": "principal"}
+      ],
+      "allocations": [
+        {"id": "collateral-contract-allocation", "kind": "acquisition", "method": "@declaration:collateral-book", "changes": [
+          {"id": "collateral-contract-change", "role": "target", "posting": "collateral-contract-leg", "position": "collateral-future", "lot": "collateral-contract-lot", "units": "1", "principal": null, "capitalized_fee": null, "expensed_fee": null}
+        ]}
+      ],
+      "rows": {
+        "lots": [
+          {"lot_id": "@collateral-contract-lot", "commodity_id": "@FC", "creation_step_id": "@step:collateral-contract-open", "origin_posting_id": "@collateral-contract-leg", "origin_key": "COLLATERAL", "acquisition_date": "2026-01-11", "book_commodity_id": null}
+        ],
+        "reference_changes": [
+          {"reference_change_id": "@collateral-contract-entry", "step_id": "@step:collateral-contract-open", "position_id": "@collateral-future", "lot_id": "@collateral-contract-lot", "change_kind": "entry", "units": {"n": "1"}, "reference_after": {"n": "100"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:collateral-terms"}
+        ]
+      }
+    },
+    {
+      "id": "collateral-only-variation",
+      "date": "2026-01-12",
+      "operation": "quantity",
+      "evidence": "INVENTED USD 12 moved from free cash to pledged margin; collateral variation only, no realized settlement or reference reset.",
+      "legs": [
+        {"id": "collateral-only-cash", "position": "cash-A", "commodity": "USD", "amount": "-12", "role": "cash"},
+        {"id": "collateral-only-margin", "position": "margin", "commodity": "USD", "amount": "12", "role": "collateral"}
+      ]
+    }
+  ]
+}

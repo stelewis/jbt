@@ -1,0 +1,149 @@
+{
+  "extends": "common.json",
+  "case_id": "cash",
+  "oracle_notes": [
+    "Opening 100.00 + external credit 20.00 - debit 5.00 = closing 115.00. Source and model reconciliation are separate equations.",
+    "Deleting the debit leaves model 120, while retained source still reconciles to 115. Omitting equal opposite movements cannot be detected by balance arithmetic alone."
+  ],
+  "expected_answers": {
+    "positions": {
+      "cash-A": "115"
+    },
+    "cash_flow": {
+      "external_credit": "20",
+      "expense": "5"
+    },
+    "source_closing": "115",
+    "model_without_debit": "120",
+    "compensating_omission_balance": "115"
+  },
+  "negative_cases": [
+    {
+      "id": "drop-debit",
+      "mutation": "remove_event",
+      "event": "debit",
+      "owner": "model-reconciliation",
+      "expected": "closing-mismatch"
+    },
+    {
+      "id": "compensating-omission",
+      "mutation": "missing_occurrences",
+      "owner": "coverage",
+      "expected": "coverage-failure"
+    }
+  ],
+  "events": [
+    {
+      "id": "cash-open",
+      "date": "2026-01-01",
+      "operation": "opening",
+      "kind": "opening",
+      "evidence": "INVENTED opening statement: account A USD 100.00 before first movement.",
+      "legs": [
+        {
+          "id": "open-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "100",
+          "source_scale": 2,
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "open-equity",
+          "category": "opening-equity",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "credit",
+      "date": "2026-01-12",
+      "operation": "quantity",
+      "evidence": "INVENTED deposit C1: external credit USD 20.00, posted 2026-01-12.",
+      "legs": [
+        {
+          "id": "credit-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "20",
+          "source_scale": 2,
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "credit-income",
+          "category": "income",
+          "commodity": "USD",
+          "amount": "-20",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "debit",
+      "date": "2026-01-20",
+      "operation": "quantity",
+      "evidence": "INVENTED purchase D1: two notebooks; USD 5.00 debit, posted 2026-01-20.",
+      "legs": [
+        {
+          "id": "debit-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-5",
+          "source_scale": 2,
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-5",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "debit-expense",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "5",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

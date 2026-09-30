@@ -1,0 +1,122 @@
+{
+  "extends": "compound-expensed.json",
+  "case_id": "ordering-split-buy",
+  "event_order": ["buy", "split", "later-buy", "move", "sell"],
+  "replacements": [
+    {"path": ["events", 1, "date"], "value": "2026-01-30"},
+    {"path": ["events", 1, "evidence"], "value": "INVENTED issuer Q notice: two new units for each old unit effective 2026-01-30; relative order to other same-day events requires review."},
+    {"path": ["events", 1, "rows", "corporate_actions", 0, "effective_date"], "value": "2026-01-30"},
+    {"path": ["expected_answers", "inventory"], "value": {}},
+    {"path": ["expected_answers", "positions", "cash-A"], "value": "-127"}
+  ],
+  "oracle_notes": [
+    "The split consumes the first acquisition's retained lot, establishing buy-before-split causality. Opening acquisition 10 Q then 2:1 split produces 20 Q; same-day later acquisition 5 Q gives 25 Q and separate original USD 100/25 principal.",
+    "Reversing buy and split would require applying the split to both roots, yielding 2*(10+5)=30 Q. A reviewed decision edge preserves 25 and prevents hash-order tie breaking."
+  ],
+  "expected_answers": {
+    "same_day_split_then_buy": "25",
+    "same_day_buy_then_split": "30"
+  },
+  "policies": [
+    {
+      "id": "split-before-buy",
+      "kind": "ordering",
+      "payload": {
+        "before": {"txn_id": "@split", "step_key": "action"},
+        "after": {"txn_id": "@later-buy", "step_key": "acquisition"},
+        "reason": "Retained issuer action applies to the first ten units before the later fill.",
+        "guards": [
+          {
+            "target": {"table": "transactions", "key": ["@split"]},
+            "fields": ["event_state", "txn_id"],
+            "expected_digest": "a0e5170891b75264bd56b440fadf05df56bc0e4522e566b1c644ab2d8f3196e3"
+          },
+          {
+            "target": {"table": "transactions", "key": ["@later-buy"]},
+            "fields": ["event_state", "txn_id"],
+            "expected_digest": "1ec99872134748295203e5d09d53cf8f5c9a84cda13ebd3e8e81b678783f883f"
+          }
+        ],
+        "evidence": [
+          {"kind": "source_record", "id": "@source:split"},
+          {"kind": "source_record", "id": "@source:later-buy"}
+        ]
+      }
+    }
+  ],
+  "rows": {
+    "book_step_dependencies": [
+      {
+        "before_step_id": "@step:split",
+        "after_step_id": "@step:later-buy",
+        "constraint_kind": "decision",
+        "declaration_id": "@declaration:split-before-buy"
+      },
+      {
+        "before_step_id": "@step:buy",
+        "after_step_id": "@step:split",
+        "constraint_kind": "causality",
+        "declaration_id": null
+      }
+    ]
+  },
+  "events": [
+    {
+      "id": "later-buy",
+      "date": "2026-01-30",
+      "operation": "acquisition",
+      "evidence": "INVENTED second fill: buy five Q for USD 25 on split effective date; relative order requires reviewed evidence.",
+      "legs": [
+        {
+          "id": "later-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "5",
+          "role": "principal",
+          "weights": [{"kind": "principal", "amount": "25", "commodity": "USD"}]
+        },
+        {
+          "id": "later-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-25",
+          "role": "cash",
+          "weights": [{"kind": "consideration", "amount": "-25", "commodity": "USD"}]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "later-acquire",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "later-target",
+              "role": "target",
+              "posting": "later-q",
+              "position": "AQ",
+              "lot": "L2",
+              "units": "5",
+              "principal": "25",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@L2",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:later-buy",
+            "origin_posting_id": "@later-q",
+            "origin_key": "split-day-second-fill",
+            "acquisition_date": "2026-01-30",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    }
+  ]
+}

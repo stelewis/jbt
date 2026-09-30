@@ -5,6 +5,7 @@
 - [Local workflows](./local-workflows.md)
 - [CI and automation](./ci.md)
 - [Pin maintenance](./pin-maintenance.md)
+- [Contract boundary dependencies](./contract-dependencies.md)
 
 ## Core commands
 

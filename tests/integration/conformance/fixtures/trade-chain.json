@@ -1,0 +1,406 @@
+{
+  "extends": "common.json",
+  "case_id": "trade-chain",
+  "oracle_notes": [
+    "Open ten Q for 100. Roll all ten Q into five R at equal consideration 100. Roll all five R into eight Q, again at 100. Close eight Q for 100.",
+    "Each roll explicitly closes one selected lot and opens another; no lot selection or price calculation is delegated to the reader. Three disposals each release principal 100 against proceeds 100, with zero fees.",
+    "One N-ary trade chain has four distinct transactions: open, roll, roll, close. Repeated role names do not collapse the two roll members. Final inventory and net cash are zero."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "0",
+        "principal": "0"
+      },
+      "AR": {
+        "units": "0",
+        "principal": "0"
+      }
+    },
+    "positions": {
+      "cash-A": "0"
+    },
+    "chain_members": "4",
+    "roll_members": "2",
+    "realized_principal": "300"
+  },
+  "events": [
+    {
+      "id": "open",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED strategy opening: ten Q for USD 100, zero fees.",
+      "legs": [
+        {
+          "id": "open-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "open-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "open-allocation",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "open-target",
+              "role": "target",
+              "posting": "open-q",
+              "position": "AQ",
+              "lot": "first",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@first",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:open",
+            "origin_posting_id": "@open-q",
+            "origin_key": "first-fill",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "roll-one",
+      "date": "2026-02-02",
+      "operation": "reduction",
+      "evidence": "INVENTED first roll: close selected ten Q for USD 100 and buy five R for USD 100; no net cash, zero fees.",
+      "legs": [
+        {
+          "id": "first-out",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "second-in",
+          "position": "AR",
+          "commodity": "R",
+          "amount": "5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "first-close",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "first-source",
+              "role": "source",
+              "posting": "first-out",
+              "position": "AQ",
+              "lot": "first",
+              "units": "-10",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "second-open",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "second-target",
+              "role": "target",
+              "posting": "second-in",
+              "position": "AR",
+              "lot": "second",
+              "units": "5",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@second",
+            "commodity_id": "@R",
+            "creation_step_id": "@step:roll-one",
+            "origin_posting_id": "@second-in",
+            "origin_key": "second-fill",
+            "acquisition_date": "2026-02-02",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "disposals": [
+          {
+            "disposal_id": "@first-disposal",
+            "allocation_id": "@first-close",
+            "proceeds_total": {
+              "n": "100"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "roll-two",
+      "date": "2026-03-02",
+      "operation": "reduction",
+      "evidence": "INVENTED second roll: close selected five R for USD 100 and buy eight Q for USD 100; no net cash, zero fees.",
+      "legs": [
+        {
+          "id": "second-out",
+          "position": "AR",
+          "commodity": "R",
+          "amount": "-5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "third-in",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "8",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "second-close",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "second-source",
+              "role": "source",
+              "posting": "second-out",
+              "position": "AR",
+              "lot": "second",
+              "units": "-5",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "third-open",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "third-target",
+              "role": "target",
+              "posting": "third-in",
+              "position": "AQ",
+              "lot": "third",
+              "units": "8",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@third",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:roll-two",
+            "origin_posting_id": "@third-in",
+            "origin_key": "third-fill",
+            "acquisition_date": "2026-03-02",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "disposals": [
+          {
+            "disposal_id": "@second-disposal",
+            "allocation_id": "@second-close",
+            "proceeds_total": {
+              "n": "100"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "close",
+      "date": "2026-04-02",
+      "operation": "reduction",
+      "evidence": "INVENTED strategy closing: sell selected eight Q for USD 100, zero fees.",
+      "legs": [
+        {
+          "id": "close-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-8",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "close-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "third-close",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "third-source",
+              "role": "source",
+              "posting": "close-q",
+              "position": "AQ",
+              "lot": "third",
+              "units": "-8",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@third-disposal",
+            "allocation_id": "@third-close",
+            "proceeds_total": {
+              "n": "100"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ],
+        "links": [
+          {
+            "link_id": "@strategy",
+            "member_role": "open",
+            "member_kind": "transaction",
+            "member_id": "@open",
+            "link_kind": "trade_chain",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@strategy",
+            "member_role": "roll",
+            "member_kind": "transaction",
+            "member_id": "@roll-one",
+            "link_kind": "trade_chain",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@strategy",
+            "member_role": "roll",
+            "member_kind": "transaction",
+            "member_id": "@roll-two",
+            "link_kind": "trade_chain",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@strategy",
+            "member_role": "close",
+            "member_kind": "transaction",
+            "member_id": "@close",
+            "link_kind": "trade_chain",
+            "origin": "derived"
+          }
+        ]
+      }
+    }
+  ]
+}

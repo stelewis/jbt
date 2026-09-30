@@ -1,0 +1,5 @@
+{
+  "extends": "pools.json",
+  "case_id": "breadth/pools-copy",
+  "entity": "owner-b"
+}

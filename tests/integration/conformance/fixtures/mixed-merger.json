@@ -1,0 +1,390 @@
+{
+  "extends": "common.json",
+  "case_id": "mixed-merger",
+  "policies": [
+    {
+      "id": "merger-scope",
+      "kind": "action_scope",
+      "payload": {
+        "commodity_id": "@Q",
+        "selection": "explicit",
+        "account_ids": [
+          "@A"
+        ],
+        "position_ids": [
+          "@AQ"
+        ],
+        "lot_ids": [
+          "@parent"
+        ],
+        "pool_ids": []
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Ten Q with principal 100 transform into five R with reviewed assigned principal 70 plus cash consideration 40. Released principal is 30, gross result 10.",
+    "A later settlement moves receivable cash to available cash; it is linked to recognition, never counted as another 40 of consideration. Child lot retains original acquisition date."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "0",
+        "principal": "0"
+      },
+      "AR": {
+        "units": "5",
+        "principal": "70"
+      }
+    },
+    "released_principal": "30",
+    "proceeds": "40",
+    "gross_result": "10",
+    "cash_receipts": "40",
+    "child_origin_date": "2026-01-02"
+  },
+  "negative_cases": [
+    {
+      "id": "double-cash",
+      "mutation": "duplicate_settlement_consideration",
+      "owner": "consideration",
+      "expected": "cash-counted-once"
+    }
+  ],
+  "positions": [
+    {
+      "id": "receivable",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "events": [
+    {
+      "id": "merger-acquire",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED original acquisition: ten Q, principal USD 100; all fees known zero.",
+      "legs": [
+        {
+          "id": "merger-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "merger-pay",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "merger-root",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "merger-initial",
+              "role": "target",
+              "posting": "merger-q",
+              "position": "AQ",
+              "lot": "parent",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@parent",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:merger-acquire",
+            "origin_posting_id": "@merger-q",
+            "origin_key": "pre-merger",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "merger",
+      "date": "2026-02-02",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED merger terms: ten Q replaced by five R and cash USD 40. Reviewed economic basis allocation retains USD 70 in R.",
+      "legs": [
+        {
+          "id": "merger-out",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "merger-in",
+          "position": "AR",
+          "commodity": "R",
+          "amount": "5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "70",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "merger-receivable",
+          "position": "receivable",
+          "commodity": "USD",
+          "amount": "40",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "40",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "merger-result",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-10",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-10",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "merger-transform",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@merger-action",
+          "changes": [
+            {
+              "id": "merger-source",
+              "role": "source",
+              "posting": "merger-out",
+              "position": "AQ",
+              "lot": "parent",
+              "units": "-10",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "merger-target",
+              "role": "target",
+              "posting": "merger-in",
+              "position": "AR",
+              "lot": "child",
+              "units": "5",
+              "principal": "70",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@child",
+            "commodity_id": "@R",
+            "creation_step_id": "@step:merger",
+            "parent_lot_id": "@parent",
+            "origin_key": "merger-stock-output",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "disposals": [
+          {
+            "disposal_id": "@merger-realized",
+            "allocation_id": "@merger-transform",
+            "proceeds_total": {
+              "n": "40"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ],
+        "corporate_actions": [
+          {
+            "action_id": "@merger-action",
+            "action_kind": "merger",
+            "commodity_id": "@Q",
+            "effective_date": "2026-02-02",
+            "txn_id": "@merger"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@merger-units",
+            "action_id": "@merger-action",
+            "effect_key": "R-units",
+            "effect_index": 0,
+            "effect_kind": "units",
+            "input_commodity_id": "@Q",
+            "resulting_commodity_id": "@R",
+            "ratio_numerator": {
+              "n": "1"
+            },
+            "ratio_denominator": {
+              "n": "2"
+            }
+          },
+          {
+            "effect_id": "@merger-cash",
+            "action_id": "@merger-action",
+            "effect_key": "cash",
+            "effect_index": 1,
+            "effect_kind": "cash",
+            "input_commodity_id": "@Q",
+            "cash_total": {
+              "n": "40"
+            },
+            "cash_commodity_id": "@USD",
+            "scope_declaration_id": "@declaration:merger-scope"
+          },
+          {
+            "effect_id": "@merger-basis",
+            "action_id": "@merger-action",
+            "effect_key": "retained-basis",
+            "effect_index": 2,
+            "effect_kind": "basis",
+            "input_commodity_id": "@Q",
+            "basis_total": {
+              "n": "70"
+            },
+            "basis_commodity_id": "@USD",
+            "scope_declaration_id": "@declaration:merger-scope"
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@merger-units",
+            "target_kind": "inventory_allocation",
+            "target_id": "@merger-transform",
+            "step_id": "@step:merger",
+            "application_role": "inventory"
+          },
+          {
+            "effect_id": "@merger-cash",
+            "target_kind": "posting",
+            "target_id": "@merger-receivable",
+            "step_id": "@step:merger",
+            "application_role": "consideration"
+          },
+          {
+            "effect_id": "@merger-basis",
+            "target_kind": "inventory_change",
+            "target_id": "@merger-target",
+            "step_id": "@step:merger",
+            "application_role": "inventory"
+          }
+        ]
+      }
+    },
+    {
+      "id": "merger-settlement",
+      "date": "2026-02-05",
+      "operation": "quantity",
+      "evidence": "INVENTED delayed statement receipt USD 40 settles prior merger cash receivable exactly.",
+      "legs": [
+        {
+          "id": "settled-receivable",
+          "position": "receivable",
+          "commodity": "USD",
+          "amount": "-40",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-40",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "settled-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "40",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "40",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "links": [
+          {
+            "link_id": "@merger-settlement-link",
+            "member_role": "trade",
+            "member_kind": "transaction",
+            "member_id": "@merger",
+            "link_kind": "settlement",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@merger-settlement-link",
+            "member_role": "settlement",
+            "member_kind": "transaction",
+            "member_id": "@merger-settlement",
+            "link_kind": "settlement",
+            "origin": "derived"
+          }
+        ]
+      }
+    }
+  ]
+}

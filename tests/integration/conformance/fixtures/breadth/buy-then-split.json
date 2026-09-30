@@ -1,0 +1,299 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/buy-then-split",
+  "oracle_notes": [
+    "Two dated synthetic source observations explicitly fix the same-day order; the reader replays the published sequence and does not choose one.",
+    "Original ten units at principal 100 plus five units at principal 50 produce 30 units and principal 150 under this order."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "30",
+        "principal": "150"
+      }
+    },
+    "positions": {
+      "cash-A": "-150"
+    },
+    "same_day_units": "30",
+    "same_day_principal": "150"
+  },
+  "negative_cases": [
+    {
+      "id": "reverse-evidenced-order",
+      "mutation": "backward_precedence",
+      "owner": "precedence_forward",
+      "expected": "invalid-order"
+    }
+  ],
+  "events": [
+    {
+      "id": "opening",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED comparable exchange sequence: acquire 10 Q at principal USD 100; session 2026-01-02.",
+      "legs": [
+        {
+          "id": "opening-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "opening-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "opening-allocation",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "opening-target",
+              "role": "target",
+              "posting": "opening-q",
+              "position": "AQ",
+              "lot": "initial-lot",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@initial-lot",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:opening",
+            "origin_posting_id": "@opening-q",
+            "origin_key": "opening-fill",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "later",
+      "date": "2026-02-05",
+      "operation": "acquisition",
+      "evidence": "INVENTED comparable exchange sequence 1 on 2026-02-05: five Q fill at USD 50 before issuer action.",
+      "legs": [
+        {
+          "id": "later-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "50",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "later-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-50",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-50",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "later-allocation",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "later-target",
+              "role": "target",
+              "posting": "later-q",
+              "position": "AQ",
+              "lot": "later-lot",
+              "units": "5",
+              "principal": "50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@later-lot",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:later",
+            "origin_posting_id": "@later-q",
+            "origin_key": "later-fill",
+            "acquisition_date": "2026-02-05",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "book_step_dependencies": [
+          {
+            "before_step_id": "@step:later",
+            "after_step_id": "@step:split",
+            "constraint_kind": "causality",
+            "declaration_id": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "split",
+      "date": "2026-02-05",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED comparable exchange sequence 2 on 2026-02-05: issuer Q two-for-one action after new fill.",
+      "legs": [
+        {
+          "id": "split-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "15",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "split-allocation",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@split-action",
+          "changes": [
+            {
+              "id": "split-initial-lot-source",
+              "role": "source",
+              "posting": "split-q",
+              "position": "AQ",
+              "lot": "initial-lot",
+              "units": "-10",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "split-initial-lot-target",
+              "role": "target",
+              "posting": "split-q",
+              "position": "AQ",
+              "lot": "initial-lot",
+              "units": "20",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "split-later-allocation",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@split-action",
+          "changes": [
+            {
+              "id": "split-later-lot-source",
+              "role": "source",
+              "posting": "split-q",
+              "position": "AQ",
+              "lot": "later-lot",
+              "units": "-5",
+              "principal": "-50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "split-later-lot-target",
+              "role": "target",
+              "posting": "split-q",
+              "position": "AQ",
+              "lot": "later-lot",
+              "units": "10",
+              "principal": "50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "corporate_actions": [
+          {
+            "action_id": "@split-action",
+            "action_kind": "split",
+            "commodity_id": "@Q",
+            "effective_date": "2026-02-05",
+            "txn_id": "@split"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@split-effect",
+            "action_id": "@split-action",
+            "effect_key": "new-units",
+            "effect_index": 0,
+            "effect_kind": "units",
+            "input_commodity_id": "@Q",
+            "resulting_commodity_id": "@Q",
+            "ratio_numerator": {
+              "n": "2"
+            },
+            "ratio_denominator": {
+              "n": "1"
+            }
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@split-effect",
+            "target_kind": "inventory_allocation",
+            "target_id": "@split-allocation",
+            "step_id": "@step:split",
+            "application_role": "inventory"
+          },
+          {
+            "effect_id": "@split-effect",
+            "target_kind": "inventory_allocation",
+            "target_id": "@split-later-allocation",
+            "step_id": "@step:split",
+            "application_role": "inventory"
+          }
+        ]
+      }
+    }
+  ]
+}

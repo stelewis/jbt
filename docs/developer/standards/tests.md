@@ -15,7 +15,7 @@ Before implementing a slice, name its owning contract and resolve small syntheti
 
 Distinguish three kinds of evidence:
 
-- **Contract proof:** versioned schemas and complete fixtures validate identities, relationships, invariants, and what an independent reader can reconstruct. Exercise shared representations across the intended domains before freezing them; do not implement every producer merely to construct its expected output.
+- **Contract proof:** versioned schemas and complete fixtures validate identities, relationships, invariants, and what an independent reader can reconstruct. Exercise shared representations across the intended domains before relying on them for durable publication; do not implement every producer merely to construct its expected output.
 - **Boundary feasibility:** use the actual writer, reader, arithmetic, or filesystem primitive when its behavior decides the contract. A mock or JSON-only round trip does not prove Parquet types, SQL arithmetic, or durable publication.
 - **Processor proof:** establish the selected slice's expected transformations before writing its processor, then require that processor to produce them through the real boundaries. Reuse contract fixtures rather than maintaining a parallel example system.
 

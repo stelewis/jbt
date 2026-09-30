@@ -1,0 +1,392 @@
+{
+  "schema_version": 1,
+  "proof_kind": "static contract specimens; no extraction, booking, action or settlement processor is implemented by this corpus",
+  "cases": [
+    "cash",
+    "brokerage",
+    "compound-expensed",
+    "compound-capitalized",
+    "compound-backfill",
+    "multi-origin",
+    "multi-origin-alternative",
+    "in-transit",
+    "pools",
+    "reference",
+    "rounding",
+    "participation",
+    "mixed-merger",
+    "outcomes",
+    "breadth/options",
+    "breadth/claims",
+    "breadth/obligations",
+    "breadth/perpetual",
+    "breadth/onchain",
+    "short-sale",
+    "breadth/consumer-a",
+    "breadth/split-then-buy",
+    "breadth/buy-then-split",
+    "empty-scope",
+    "correction-history",
+    "identity-history",
+    "ordering-split-buy",
+    "reference-variants",
+    "trade-chain",
+    "time-and-loan",
+    "three-lot-disposal",
+    "corporate-variants",
+    "source-sequence"
+  ],
+  "coverage": [
+    {
+      "family": "cross-capability/acquisition-split-transfer-disposal-backfill",
+      "exercise": "compound history",
+      "case": "compound-expensed",
+      "positive": "inventory",
+      "negative": "transfer_component",
+      "status": "met",
+      "later_processor": "booking, actions and guarded selection replay"
+    },
+    {
+      "family": "cross-capability/contract-settlement-collateral",
+      "exercise": "Contract terms and recorded settlement",
+      "case": "reference",
+      "positive": "settlement_total",
+      "negative": "reference_before",
+      "status": "met",
+      "later_processor": "contract settlement and reference branching"
+    },
+    {
+      "family": "cross-capability/shared-ownership-authority",
+      "exercise": "multi-entity handoff",
+      "case": "breadth/consumer-a",
+      "positive": "joint_before_transfer",
+      "negative": "authority_overlap",
+      "status": "met",
+      "later_processor": "downstream consolidation and declaration resolver"
+    },
+    {
+      "family": "cross-capability/corrections-overlap-publication",
+      "exercise": "Retained replacement journal and three independently verified correction-stage snapshots",
+      "case": "correction-history",
+      "positive": "correction_cash",
+      "negative": "active_correction_chain",
+      "status": "met",
+      "later_processor": "merge, corrections and durable publisher"
+    },
+    {
+      "family": "cross-capability/multi-origin-transfer-pooling",
+      "exercise": "Pool contribution, consumption, and transfer",
+      "case": "pools",
+      "positive": "pools",
+      "negative": "both_lot_and_pool",
+      "status": "met",
+      "later_processor": "pool and transfer selection, conversion"
+    },
+    {
+      "family": "cross-capability/exact-totals-component-ownership",
+      "exercise": "Numeric limits and rounding",
+      "case": "rounding",
+      "positive": "consumed_principal",
+      "negative": "final_principal_residual",
+      "status": "met",
+      "later_processor": "remaining-total allocation and fee attribution"
+    },
+    {
+      "family": "cross-capability/participation-replay",
+      "exercise": "Source statuses are observations, not review flags",
+      "case": "participation",
+      "positive": "paid_fee",
+      "negative": "pending_step",
+      "status": "met",
+      "later_processor": "recognition, order planning and replay"
+    },
+    {
+      "family": "cross-capability/evidenced-source-sequence",
+      "exercise": "Same-day source ordinals in one scope and domain versus cross-domain or cross-scope order",
+      "case": "source-sequence",
+      "positive": "positions",
+      "negative": "source_sequence_domain",
+      "status": "met",
+      "later_processor": "source-order planner and replay"
+    },
+    {
+      "family": "cross-capability/gross-assertions-identity-survival",
+      "exercise": "One brokerage account, several relationships",
+      "case": "brokerage",
+      "positive": "closing_gross",
+      "negative": "boundary_account",
+      "status": "met",
+      "later_processor": "source/model reconciliation and explicit identity decisions"
+    },
+    {
+      "family": "reproducibility-preservation",
+      "exercise": "logical versus execution content",
+      "case": "cash",
+      "positive": "source_closing",
+      "negative": "unknown_field",
+      "status": "met",
+      "later_processor": "custody, recovery and publication integration"
+    },
+    {
+      "family": "sources-identity-correction",
+      "exercise": "Source versus model reconciliation and scoped authority intervals",
+      "case": "cash",
+      "positive": "model_without_debit",
+      "negative": "authority_conflict",
+      "status": "met",
+      "later_processor": "extract, merge and review"
+    },
+    {
+      "family": "time-and-coverage",
+      "exercise": "date-role handoff",
+      "case": "compound-expensed",
+      "positive": "positions",
+      "negative": "unknown_field",
+      "status": "met",
+      "later_processor": "date resolution and committed-as_of coverage"
+    },
+    {
+      "family": "numbers-and-rendering",
+      "exercise": "Numeric limits and rounding",
+      "case": "rounding",
+      "positive": "final_principal",
+      "negative": "decimal_noncanonical",
+      "status": "met",
+      "later_processor": "source grammars, numeric boundary and rendering"
+    },
+    {
+      "family": "investments-and-contracts",
+      "exercise": "exact booked components",
+      "case": "compound-capitalized",
+      "positive": "disposal",
+      "negative": "transfer_component",
+      "status": "met",
+      "later_processor": "event-specific investment booking"
+    },
+    {
+      "family": "corporate-actions",
+      "exercise": "Fractional reverse split, exact parent/child spinoff basis, return of capital, post-disposal action, reinvestment and redenomination versus alias",
+      "case": "corporate-variants",
+      "positive": "inventory",
+      "negative": "basis_application_amount",
+      "status": "met",
+      "later_processor": "corporate action applications"
+    },
+    {
+      "family": "additional-event-families",
+      "exercise": "failed attempt paid fee",
+      "case": "participation",
+      "positive": "cancelled_effect",
+      "negative": "pending_step",
+      "status": "met",
+      "later_processor": "on-chain, claims and loan adapters"
+    },
+    {
+      "family": "analysis-and-sharing",
+      "exercise": "Concurrent quotes",
+      "case": "breadth/consumer-a",
+      "positive": "performance",
+      "negative": "missing_fx_policy",
+      "status": "met",
+      "later_processor": "independent consumer declarations and policy marts"
+    },
+    {
+      "family": "schema-exercise/noncommutative-same-day",
+      "exercise": "Noncommutative same-day operations",
+      "case": "breadth/split-then-buy",
+      "positive": "same_day_units",
+      "negative": "backward_precedence",
+      "status": "met",
+      "later_processor": "economic order planner"
+    },
+    {
+      "family": "schema-exercise/n-ary-links",
+      "exercise": "N-ary links and concurrent quotes",
+      "case": "reference",
+      "positive": "quotes",
+      "negative": "reference_before",
+      "status": "met",
+      "later_processor": "relationship resolver"
+    },
+    {
+      "family": "investments-and-contracts/options",
+      "exercise": "exercise/assignment, adjusted deliverables and expiry",
+      "case": "breadth/options",
+      "positive": "quantities",
+      "negative": "full_close_components",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "investments-and-contracts/structured-claims",
+      "exercise": "ETN/ETF, structured, conditional, retirement and failure claims",
+      "case": "breadth/claims",
+      "positive": "quantities",
+      "negative": "position_counterparty",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "investments-and-contracts/obligations",
+      "exercise": "short cover, margin, loan opening and remortgage",
+      "case": "breadth/obligations",
+      "positive": "quantities",
+      "negative": "full_close_components",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "investments-and-contracts/inverse-perpetual",
+      "exercise": "funding and inverse settlement without manufactured notional",
+      "case": "breadth/perpetual",
+      "positive": "settlement_total",
+      "negative": "reference_continuity",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "additional-event-families/onchain",
+      "exercise": "network fees, bridge, rebase, fork, NFT, pool, reorganization and stablecoin",
+      "case": "breadth/onchain",
+      "positive": "quantities",
+      "negative": "position_leg_identity",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "cross-capability/in-transit-slices",
+      "exercise": "allocation-source slices between departure and arrival",
+      "case": "in-transit",
+      "positive": "between_dates",
+      "negative": "transfer_disposal_count",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "corporate-actions/mixed-merger",
+      "exercise": "mixed cash/stock consideration and one cash receipt",
+      "case": "mixed-merger",
+      "positive": "gross_result",
+      "negative": "duplicate_settlement_consideration",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "corporate-actions/exact-basis-target",
+      "exercise": "Spinoff parent and child effects target distinct inventory changes, never their shared allocation",
+      "case": "corporate-variants",
+      "positive": "inventory",
+      "negative": "action_application_target",
+      "status": "met",
+      "later_processor": "corporate action applications"
+    },
+    {
+      "family": "investments-and-contracts/short-sale",
+      "exercise": "short proceeds, borrow fee, substitute dividend and cover",
+      "case": "short-sale",
+      "positive": "cover_loss",
+      "negative": "short_sign",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "additional-event-families/complete-set",
+      "exercise": "O1/O2/O3 outcome set and N-ary strategy roles",
+      "case": "outcomes",
+      "positive": "complete_set_members",
+      "negative": "remove_outcome_member",
+      "status": "met",
+      "later_processor": "family-specific extraction, booking and determination"
+    },
+    {
+      "family": "cross-capability/same-day-opposite-order",
+      "exercise": "Same-day buy before split",
+      "case": "breadth/buy-then-split",
+      "positive": "same_day_units",
+      "negative": "backward_precedence",
+      "status": "met",
+      "later_processor": "evidence comparison, economic order planner and guarded booking"
+    },
+    {
+      "family": "schema-exercise/complete-empty-scope",
+      "exercise": "Complete empty source assertion set",
+      "case": "empty-scope",
+      "positive": "empty_count",
+      "negative": "complete_balance_scope",
+      "status": "met",
+      "later_processor": "reconciliation"
+    },
+    {
+      "family": "sources-identity-correction/guarded-supersession",
+      "exercise": "Authored correction revision and guard",
+      "case": "correction-history",
+      "positive": "correction_cash",
+      "negative": "active_correction_chain",
+      "status": "met",
+      "later_processor": "correction application"
+    },
+    {
+      "family": "sources-identity/merge-split-retirement",
+      "exercise": "Retracted predecessor and reviewed identity split",
+      "case": "identity-history",
+      "positive": "split_survivors",
+      "negative": "identity_membership_disjoint",
+      "status": "met",
+      "later_processor": "identity transition review"
+    },
+    {
+      "family": "schema-exercise/guarded-same-day-order",
+      "exercise": "Guarded 10-to-20 split before same-day buy five yields 25, not 30",
+      "case": "ordering-split-buy",
+      "positive": "same_day_split_then_buy",
+      "negative": "precedence_forward",
+      "status": "met",
+      "later_processor": "replay ordering"
+    },
+    {
+      "family": "cross-capability/reference-branches-fees",
+      "exercise": "Collateral-only, partial reset, transfer, reversal and original multi-currency fee slices",
+      "case": "reference-variants",
+      "positive": "settlement_total",
+      "negative": "partial-reset-without-branch",
+      "status": "met",
+      "later_processor": "reference contract branching and settlement attribution"
+    },
+    {
+      "family": "schema-exercise/n-ary-trade-chain",
+      "exercise": "Open, two rolls and close over four distinct N-ary members",
+      "case": "trade-chain",
+      "positive": "chain_members",
+      "negative": "link_distinct_members",
+      "status": "met",
+      "later_processor": "trade-link resolver and rollover booking"
+    },
+    {
+      "family": "time-and-coverage/fold-irregular-period",
+      "exercise": "NYC ambiguous fold and closed irregular empty period",
+      "case": "time-and-loan",
+      "positive": "empty_period",
+      "negative": "unresolved-fold",
+      "status": "met",
+      "later_processor": "source time resolution and loan booking"
+    },
+    {
+      "family": "additional-event-families/loan-allocation-boundary",
+      "exercise": "Known principal/interest versus retained unallocated payment",
+      "case": "time-and-loan",
+      "positive": "known_principal_repaid",
+      "negative": "invent-loan-allocation",
+      "status": "met",
+      "later_processor": "source time resolution and loan booking"
+    },
+    {
+      "family": "investments-and-contracts/three-lot-selection",
+      "exercise": "One sale leg selects three origins with explicit 10/20/60 released principal",
+      "case": "three-lot-disposal",
+      "positive": "released_principal",
+      "negative": "inventory_slice",
+      "status": "met",
+      "later_processor": "lot-selection booking"
+    }
+  ]
+}
