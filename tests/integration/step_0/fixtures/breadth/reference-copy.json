@@ -1,0 +1,5 @@
+{
+  "extends": "reference.json",
+  "case_id": "breadth/reference-copy",
+  "entity": "owner-b"
+}

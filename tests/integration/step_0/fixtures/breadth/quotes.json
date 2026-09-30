@@ -1,0 +1,14 @@
+{
+  "extends": "reference.json",
+  "case_id": "breadth/quotes",
+  "oracle_notes": [
+    "Concurrent F/USD mark 103, index 102 and trade 104 remain separate. Two contracts times multiplier 10 give marked notional 2060 USD or 1030 EUR at selected USD/EUR 0.5.",
+    "Independent reverse quote EUR/USD 1.9 is not the reciprocal 2. Missing settlement basis, absent FX policy or absent direct FX evidence blocks only the requested valuation."
+  ],
+  "rows": {
+    "prices": [
+      {"price_id": "@usd-eur", "commodity_id": "@USD", "quote_commodity_id": "@EUR", "date": "2026-01-04", "rate": {"n": "0.5"}, "basis": "mark", "origin": "extracted", "market": "Invented FX"},
+      {"price_id": "@eur-usd", "commodity_id": "@EUR", "quote_commodity_id": "@USD", "date": "2026-01-04", "rate": {"n": "1.9"}, "basis": "mark", "origin": "extracted", "market": "Invented FX"}
+    ]
+  }
+}

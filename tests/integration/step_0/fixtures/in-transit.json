@@ -1,0 +1,200 @@
+{
+  "extends": "multi-origin.json",
+  "case_id": "in-transit",
+  "positions": [
+    {
+      "id": "transit-Q",
+      "account": "A",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:book"
+    }
+  ],
+  "oracle_notes": [
+    "Departure 2026-01-05 moves six Q/principal 100 to explicit in-transit custody. Arrival 2026-01-08 empties transit into B, retaining roots L1/L2 and exact 20/80 components.",
+    "Between dates A has four units/principal 60, transit has six/principal 100, B has zero. After arrival B has six/principal 100; no disappearance or new acquisition."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "4",
+        "principal": "60"
+      },
+      "BQ": {
+        "units": "6",
+        "principal": "100"
+      },
+      "transit-Q": {
+        "units": "0",
+        "principal": "0"
+      }
+    },
+    "between_dates": {
+      "AQ": "4",
+      "transit-Q": "6",
+      "BQ": "0"
+    }
+  },
+  "replacements": [
+    {
+      "path": ["policies", 1, "payload", "position_ids"],
+      "value": ["@AQ", "@AR", "@BQ", "@transit-Q"]
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "legs",
+        1,
+        "position"
+      ],
+      "value": "transit-Q"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "position"
+      ],
+      "value": "transit-Q"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        1,
+        "changes",
+        1,
+        "position"
+      ],
+      "value": "transit-Q"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "evidence"
+      ],
+      "value": "INVENTED departure 2026-01-05: six Q in transit A to B, arrival not yet evidenced; FIRST two, SECOND four."
+    }
+  ],
+  "events": [
+    {
+      "id": "arrival",
+      "date": "2026-01-08",
+      "operation": "transfer",
+      "evidence": "INVENTED destination custody confirms arrival 2026-01-08 of six Q: FIRST two, SECOND four, no new acquisition.",
+      "legs": [
+        {
+          "id": "transit-out",
+          "position": "transit-Q",
+          "commodity": "Q",
+          "amount": "-6",
+          "role": "principal"
+        },
+        {
+          "id": "arrival-in",
+          "position": "BQ",
+          "commodity": "Q",
+          "amount": "6",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "arrival-1",
+          "kind": "transfer",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "arrival-1-out",
+              "role": "source",
+              "posting": "transit-out",
+              "position": "transit-Q",
+              "lot": "L1",
+              "units": "-2",
+              "principal": "-20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "arrival-1-in",
+              "role": "target",
+              "posting": "arrival-in",
+              "position": "BQ",
+              "lot": "L1",
+              "units": "2",
+              "principal": "20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "arrival-2",
+          "kind": "transfer",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "arrival-2-out",
+              "role": "source",
+              "posting": "transit-out",
+              "position": "transit-Q",
+              "lot": "L2",
+              "units": "-4",
+              "principal": "-80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "arrival-2-in",
+              "role": "target",
+              "posting": "arrival-in",
+              "position": "BQ",
+              "lot": "L2",
+              "units": "4",
+              "principal": "80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "links": [
+          {
+            "link_id": "@arrival-link",
+            "member_role": "outgoing",
+            "member_kind": "posting",
+            "member_id": "@transit-out",
+            "link_kind": "transfer",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@arrival-link",
+            "member_role": "incoming",
+            "member_kind": "posting",
+            "member_id": "@arrival-in",
+            "link_kind": "transfer",
+            "origin": "derived"
+          }
+        ],
+        "book_step_dependencies": [
+          {
+            "before_step_id": "@step:selected-move",
+            "after_step_id": "@step:arrival",
+            "constraint_kind": "causality"
+          }
+        ]
+      }
+    }
+  ]
+}

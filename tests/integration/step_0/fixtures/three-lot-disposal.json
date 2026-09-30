@@ -1,0 +1,246 @@
+{
+  "extends": "multi-origin.json",
+  "case_id": "three-lot-disposal",
+  "oracle_notes": [
+    "After the selected transfer A retains two FIRST/principal 20 and two SECOND/principal 40. A third acquisition adds three Q/principal 90.",
+    "One sale of four Q selects one FIRST/principal 10, one SECOND/principal 20, and two THIRD/principal 60. Total principal released is 90 against proceeds 100, so gain is 10. Proceeds at 25 per unit are explicitly sliced 25,25,50.",
+    "A keeps one unit of each origin: three Q/principal 60. B still holds six Q/principal 100. No consumer is permitted to select a different third slice."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "3",
+        "principal": "60"
+      },
+      "BQ": {
+        "units": "6",
+        "principal": "100"
+      }
+    },
+    "positions": {
+      "cash-A": "-150"
+    },
+    "allocation_count": 8,
+    "selected_origins": 3,
+    "released_principal": "90",
+    "proceeds": "100",
+    "gain": "10"
+  },
+  "events": [
+    {
+      "id": "third-acquisition",
+      "date": "2026-01-06",
+      "operation": "acquisition",
+      "evidence": "INVENTED third fill: three Q for USD 90, fees zero, broker origin THIRD.",
+      "legs": [
+        {
+          "id": "third-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "3",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "90",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "third-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-90",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-90",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "third-allocation",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "third-target",
+              "role": "target",
+              "posting": "third-q",
+              "position": "AQ",
+              "lot": "L3",
+              "units": "3",
+              "principal": "90",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@L3",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:third-acquisition",
+            "origin_posting_id": "@third-q",
+            "origin_key": "THIRD",
+            "acquisition_date": "2026-01-06",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "three-way-sale",
+      "date": "2026-01-07",
+      "operation": "reduction",
+      "evidence": "INVENTED selected sale: four Q for USD 100; one FIRST, one SECOND, two THIRD; fees zero.",
+      "legs": [
+        {
+          "id": "sale-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-4",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-90",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sale-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "100",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sale-gain",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-10",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-10",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "sell-first",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "first-source",
+              "role": "source",
+              "posting": "sale-q",
+              "position": "AQ",
+              "lot": "L1",
+              "units": "-1",
+              "principal": "-10",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "sell-second",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "second-source",
+              "role": "source",
+              "posting": "sale-q",
+              "position": "AQ",
+              "lot": "L2",
+              "units": "-1",
+              "principal": "-20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "sell-third",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "third-source",
+              "role": "source",
+              "posting": "sale-q",
+              "position": "AQ",
+              "lot": "L3",
+              "units": "-2",
+              "principal": "-60",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@first-disposal",
+            "allocation_id": "@sell-first",
+            "proceeds_total": {
+              "n": "25"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          },
+          {
+            "disposal_id": "@second-disposal",
+            "allocation_id": "@sell-second",
+            "proceeds_total": {
+              "n": "25"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          },
+          {
+            "disposal_id": "@third-disposal",
+            "allocation_id": "@sell-third",
+            "proceeds_total": {
+              "n": "50"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    }
+  ]
+}

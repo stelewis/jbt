@@ -1,0 +1,9 @@
+{
+  "extends": "breadth/consumer-a.json",
+  "case_id": "breadth/consumer-b",
+  "entity": "owner-b",
+  "replacements": [
+    {"path": ["events", 0, "evidence"], "value": "INVENTED owner B PDF statement: joint account A opening USD 100. Independent account B USD 100 is a separate owner B account, not owner's A individual account."},
+    {"path": ["events", 1, "evidence"], "value": "INVENTED owner B PDF statement corroborates shared joint credit USD 10 and closing USD 110; distinct retained bytes and source occurrences."}
+  ]
+}

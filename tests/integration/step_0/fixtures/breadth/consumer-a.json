@@ -1,0 +1,78 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/consumer-a",
+  "entity": "owner-a",
+  "accounts": [{"id": "performance"}],
+  "positions": [
+    {"id": "performance-cash", "account": "performance", "commodity": "USD", "kind": "claim", "counterparty": "custodian", "measurement": "quantity", "inventory": "quantity"}
+  ],
+  "oracle_notes": [
+    "Joint account A opens at 100 and external credit 10 gives 110 on January 31. Owner B's different-format copy is evidence of the same 110, not another holding.",
+    "Explicit 60/40 beneficial shares of 110 are 66 and 44. A comparable copy showing 111 must block consolidation despite approved authority.",
+    "On February 1, individual B sends 20 to joint A: B becomes 80, A becomes 130; household external transfer flow is zero.",
+    "Separate performance account opens with 100 before March. March 1 contribution 50 and March 31 investment return 15 close at 165. Start-period contribution policy yields (165-100-50)/(100+50)=1/10.",
+    "No statement or quantity-only balance is an investment valuation. Downstream population, date, perimeter and return-method policies are explicit inputs."
+  ],
+  "expected_answers": {
+    "quantities": {"cash-A": "130", "cash-B": "80", "performance-cash": "165"},
+    "joint_before_transfer": "110",
+    "beneficial_shares": {"owner-a": "66", "owner-b": "44"},
+    "household_external_transfer": "0",
+    "performance": "1/10"
+  },
+  "events": [
+    {
+      "id": "household-opening", "date": "2026-01-01", "dates": {"date_settled": "2026-01-01"}, "operation": "opening", "kind": "opening",
+      "evidence": "INVENTED owner A CSV statement: joint account A opening USD 100 and independent account B opening USD 100.",
+      "legs": [
+        {"id": "joint-opening", "position": "cash-A", "commodity": "USD", "amount": "100", "role": "cash", "weights": [{"kind": "consideration", "amount": "100", "commodity": "USD"}]},
+        {"id": "individual-opening", "position": "cash-B", "commodity": "USD", "amount": "100", "role": "cash", "weights": [{"kind": "consideration", "amount": "100", "commodity": "USD"}]},
+        {"id": "household-equity", "category": "opening-equity", "commodity": "USD", "amount": "-200", "role": "principal", "weights": [{"kind": "principal", "amount": "-200", "commodity": "USD"}]}
+      ]
+    },
+    {
+      "id": "joint-credit", "date": "2026-01-15", "dates": {"date_settled": "2026-01-15"}, "operation": "boundary",
+      "evidence": "INVENTED owner A CSV statement: external joint account credit USD 10, closing USD 110.",
+      "legs": [
+        {"id": "joint-credit-cash", "position": "cash-A", "commodity": "USD", "amount": "10", "role": "cash", "weights": [{"kind": "consideration", "amount": "10", "commodity": "USD"}]},
+        {"id": "joint-credit-income", "category": "income", "commodity": "USD", "amount": "-10", "role": "principal", "weights": [{"kind": "consideration", "amount": "-10", "commodity": "USD"}]}
+      ]
+    },
+    {
+      "id": "internal-transfer", "date": "2026-02-01", "dates": {"date_settled": "2026-02-01"}, "operation": "quantity",
+      "evidence": "INVENTED owner A transfer confirmation: individual B sends USD 20 to joint A; both accounts are in declared household perimeter.",
+      "legs": [
+        {"id": "transfer-out", "position": "cash-B", "commodity": "USD", "amount": "-20", "role": "cash", "weights": [{"kind": "consideration", "amount": "-20", "commodity": "USD"}]},
+        {"id": "transfer-in", "position": "cash-A", "commodity": "USD", "amount": "20", "role": "cash", "weights": [{"kind": "consideration", "amount": "20", "commodity": "USD"}]}
+      ],
+      "rows": {"links": [
+        {"link_id": "@internal", "member_role": "outgoing", "member_kind": "posting", "member_id": "@transfer-out", "link_kind": "transfer", "origin": "declaration"},
+        {"link_id": "@internal", "member_role": "incoming", "member_kind": "posting", "member_id": "@transfer-in", "link_kind": "transfer", "origin": "declaration"}
+      ]}
+    },
+    {
+      "id": "performance-opening", "date": "2026-02-28", "dates": {"date_settled": "2026-02-28"}, "operation": "opening", "kind": "opening",
+      "evidence": "INVENTED independent performance account opening USD 100, not a period contribution.",
+      "legs": [
+        {"id": "performance-opening-cash", "position": "performance-cash", "commodity": "USD", "amount": "100", "role": "cash", "weights": [{"kind": "consideration", "amount": "100", "commodity": "USD"}]},
+        {"id": "performance-opening-equity", "category": "opening-equity", "commodity": "USD", "amount": "-100", "role": "principal", "weights": [{"kind": "principal", "amount": "-100", "commodity": "USD"}]}
+      ]
+    },
+    {
+      "id": "performance-contribution", "date": "2026-03-01", "dates": {"date_settled": "2026-03-01"}, "operation": "boundary",
+      "evidence": "INVENTED external owner contribution USD 50 at start of reporting period.",
+      "legs": [
+        {"id": "performance-contribution-cash", "position": "performance-cash", "commodity": "USD", "amount": "50", "role": "cash", "weights": [{"kind": "consideration", "amount": "50", "commodity": "USD"}]},
+        {"id": "performance-contribution-equity", "category": "opening-equity", "commodity": "USD", "amount": "-50", "role": "principal", "weights": [{"kind": "principal", "amount": "-50", "commodity": "USD"}]}
+      ]
+    },
+    {
+      "id": "performance-return", "date": "2026-03-31", "dates": {"date_settled": "2026-03-31"}, "operation": "boundary",
+      "evidence": "INVENTED investment income USD 15 paid into performance account, closing USD 165; fee amount explicitly zero.",
+      "legs": [
+        {"id": "performance-return-cash", "position": "performance-cash", "commodity": "USD", "amount": "15", "role": "cash", "weights": [{"kind": "consideration", "amount": "15", "commodity": "USD"}]},
+        {"id": "performance-return-income", "category": "income", "commodity": "USD", "amount": "-15", "role": "principal", "weights": [{"kind": "consideration", "amount": "-15", "commodity": "USD"}]}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,558 @@
+{
+  "extends": "common.json",
+  "case_id": "compound-expensed",
+  "oracle_notes": [
+    "Acquire 10 Q with principal 100 and acquisition fee 2. The 2:1 split preserves both totals.",
+    "Transfer 8/20 of the origin: principal 40, fee 0.80. A retains 12/60/1.20.",
+    "Sell 5/8 of B: principal 25, original fee 0.50; proceeds 40, disposal fee 1, cash 39.",
+    "Final 15 Q principal 75, attributed acquisition fee 1.50. Gross booked result 15 excludes the already expensed acquisition fee; trade performance 40-25-0.50-1 = 13.50."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "12",
+        "principal": "60",
+        "capitalized_fee": "0",
+        "expensed_fee": "1.20"
+      },
+      "BQ": {
+        "units": "3",
+        "principal": "15",
+        "capitalized_fee": "0",
+        "expensed_fee": "0.30"
+      }
+    },
+    "disposal": {
+      "principal": "25",
+      "acquisition_fee": "0.50",
+      "proceeds": "40",
+      "disposal_fee": "1",
+      "gross_result": "15",
+      "net_performance": "13.50"
+    },
+    "positions": {
+      "cash-A": "-102",
+      "cash-B": "39"
+    }
+  },
+  "negative_cases": [
+    {
+      "id": "transfer-as-purchase",
+      "mutation": "transfer_component",
+      "owner": "inventory-conservation",
+      "expected": "component-mismatch"
+    },
+    {
+      "id": "stale-selection",
+      "mutation": "guard_revision",
+      "owner": "correction-guard",
+      "expected": "review-required"
+    }
+  ],
+  "events": [
+    {
+      "id": "buy",
+      "date": "2026-01-30",
+      "dates": {
+        "date_traded": "2026-01-30",
+        "date_settled": "2026-02-02"
+      },
+      "operation": "acquisition",
+      "evidence": "INVENTED fill BUY-1: 10 Q principal USD 100; commission USD 2. Trade 2026-01-30; cash settles 2026-02-02.",
+      "legs": [
+        {
+          "id": "buy-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "fields": {
+            "date_settled_mode": "unknown"
+          },
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "buy-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-102",
+          "role": "cash",
+          "fields": {
+            "date_posted_mode": "value",
+            "date_posted": "2026-02-02"
+          },
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-102",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "buy-fee",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "2",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "2",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "acquire",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "acquire-target",
+              "role": "target",
+              "posting": "buy-q",
+              "position": "AQ",
+              "lot": "L",
+              "units": "10",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "2"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@L",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:buy",
+            "origin_posting_id": "@buy-q",
+            "origin_key": "original-fill",
+            "acquisition_date": "2026-01-30",
+            "book_commodity_id": "@USD"
+          }
+        ],
+        "fee_allocations": [
+          {
+            "fee_allocation_id": "@original-fee",
+            "fee_posting_id": "@buy-fee",
+            "target_kind": "lot",
+            "target_id": "@L",
+            "amount": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            },
+            "commodity_id": "@USD",
+            "book_amount": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            },
+            "book_commodity_id": "@USD",
+            "treatment": "expensed",
+            "method_declaration_id": "@declaration:fees"
+          }
+        ],
+        "inventory_fee_changes": [
+          {
+            "change_id": "@acquire-target",
+            "fee_allocation_id": "@original-fee",
+            "amount_delta": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            },
+            "book_amount_delta": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "split",
+      "date": "2026-02-05",
+      "operation": "action",
+      "kind": "corporate_action",
+      "evidence": "INVENTED issuer Q notice: two new units for each old unit effective 2026-02-05; no cash.",
+      "legs": [
+        {
+          "id": "split-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "split-allocation",
+          "kind": "transformation",
+          "method": "@declaration:book",
+          "action": "@split-action",
+          "changes": [
+            {
+              "id": "split-source",
+              "role": "source",
+              "posting": "split-q",
+              "position": "AQ",
+              "lot": "L",
+              "units": "-10",
+              "principal": "-100",
+              "capitalized_fee": "0",
+              "expensed_fee": "-2"
+            },
+            {
+              "id": "split-target",
+              "role": "target",
+              "posting": "split-q",
+              "position": "AQ",
+              "lot": "L",
+              "units": "20",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "2"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "corporate_actions": [
+          {
+            "action_id": "@split-action",
+            "action_kind": "split",
+            "commodity_id": "@Q",
+            "effective_date": "2026-02-05",
+            "txn_id": "@split"
+          }
+        ],
+        "corporate_action_effects": [
+          {
+            "effect_id": "@split-effect",
+            "action_id": "@split-action",
+            "effect_key": "new-units",
+            "effect_index": 0,
+            "effect_kind": "units",
+            "input_commodity_id": "@Q",
+            "resulting_commodity_id": "@Q",
+            "ratio_numerator": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            },
+            "ratio_denominator": {
+              "coefficient": "1",
+              "scale": 0,
+              "source_scale": null
+            }
+          }
+        ],
+        "action_applications": [
+          {
+            "effect_id": "@split-effect",
+            "target_kind": "inventory_allocation",
+            "target_id": "@split-allocation",
+            "step_id": "@step:split",
+            "application_role": "inventory"
+          }
+        ],
+        "inventory_fee_changes": [
+          {
+            "change_id": "@split-source",
+            "fee_allocation_id": "@original-fee",
+            "amount_delta": {
+              "coefficient": "-2",
+              "scale": 0,
+              "source_scale": null
+            },
+            "book_amount_delta": {
+              "coefficient": "-2",
+              "scale": 0,
+              "source_scale": null
+            }
+          },
+          {
+            "change_id": "@split-target",
+            "fee_allocation_id": "@original-fee",
+            "amount_delta": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            },
+            "book_amount_delta": {
+              "coefficient": "2",
+              "scale": 0,
+              "source_scale": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "move",
+      "date": "2026-02-10",
+      "operation": "transfer",
+      "evidence": "INVENTED custody instruction: move 8 Q from A to B; same owner; no disposal.",
+      "legs": [
+        {
+          "id": "move-out",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-8",
+          "role": "principal"
+        },
+        {
+          "id": "move-in",
+          "position": "BQ",
+          "commodity": "Q",
+          "amount": "8",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "move-slice",
+          "kind": "transfer",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "move-source",
+              "role": "source",
+              "posting": "move-out",
+              "position": "AQ",
+              "lot": "L",
+              "units": "-8",
+              "principal": "-40",
+              "capitalized_fee": "0",
+              "expensed_fee": "-0.80"
+            },
+            {
+              "id": "move-target",
+              "role": "target",
+              "posting": "move-in",
+              "position": "BQ",
+              "lot": "L",
+              "units": "8",
+              "principal": "40",
+              "capitalized_fee": "0",
+              "expensed_fee": "0.80"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "links": [
+          {
+            "link_id": "@move-link",
+            "member_role": "outgoing",
+            "member_kind": "posting",
+            "member_id": "@move-out",
+            "link_kind": "transfer",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@move-link",
+            "member_role": "incoming",
+            "member_kind": "posting",
+            "member_id": "@move-in",
+            "link_kind": "transfer",
+            "origin": "derived"
+          }
+        ],
+        "inventory_fee_changes": [
+          {
+            "change_id": "@move-source",
+            "fee_allocation_id": "@original-fee",
+            "amount_delta": {
+              "coefficient": "-8",
+              "scale": 1,
+              "source_scale": null
+            },
+            "book_amount_delta": {
+              "coefficient": "-8",
+              "scale": 1,
+              "source_scale": null
+            }
+          },
+          {
+            "change_id": "@move-target",
+            "fee_allocation_id": "@original-fee",
+            "amount_delta": {
+              "coefficient": "8",
+              "scale": 1,
+              "source_scale": null
+            },
+            "book_amount_delta": {
+              "coefficient": "8",
+              "scale": 1,
+              "source_scale": null
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sell",
+      "date": "2026-02-28",
+      "dates": {
+        "date_traded": "2026-02-28",
+        "date_settled": "2026-03-03"
+      },
+      "operation": "reduction",
+      "evidence": "INVENTED fill SELL-1: dispose 5 Q at total USD 40; fee USD 1; net cash USD 39 settled 2026-03-03.",
+      "legs": [
+        {
+          "id": "sell-q",
+          "position": "BQ",
+          "commodity": "Q",
+          "amount": "-5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-25",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sell-cash",
+          "position": "cash-B",
+          "commodity": "USD",
+          "amount": "39",
+          "role": "cash",
+          "fields": {
+            "date_posted_mode": "value",
+            "date_posted": "2026-03-03"
+          },
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "39",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sell-fee",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "sell-result",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-15",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-15",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "sell-slice",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "sell-source",
+              "role": "source",
+              "posting": "sell-q",
+              "position": "BQ",
+              "lot": "L",
+              "units": "-5",
+              "principal": "-25",
+              "capitalized_fee": "0",
+              "expensed_fee": "-0.50"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@sale",
+            "allocation_id": "@sell-slice",
+            "proceeds_total": {
+              "coefficient": "40",
+              "scale": 0,
+              "source_scale": null
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "coefficient": "1",
+              "scale": 0,
+              "source_scale": null
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ],
+        "fee_allocations": [
+          {
+            "fee_allocation_id": "@sale-fee",
+            "fee_posting_id": "@sell-fee",
+            "target_kind": "disposal",
+            "target_id": "@sale",
+            "amount": {
+              "coefficient": "1",
+              "scale": 0,
+              "source_scale": null
+            },
+            "commodity_id": "@USD",
+            "book_amount": {
+              "coefficient": "1",
+              "scale": 0,
+              "source_scale": null
+            },
+            "book_commodity_id": "@USD",
+            "treatment": "expensed",
+            "method_declaration_id": "@declaration:fees"
+          }
+        ],
+        "inventory_fee_changes": [
+          {
+            "change_id": "@sell-source",
+            "fee_allocation_id": "@original-fee",
+            "amount_delta": {
+              "coefficient": "-5",
+              "scale": 1,
+              "source_scale": null
+            },
+            "book_amount_delta": {
+              "coefficient": "-5",
+              "scale": 1,
+              "source_scale": null
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

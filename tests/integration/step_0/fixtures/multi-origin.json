@@ -1,0 +1,231 @@
+{
+  "extends": "common.json",
+  "case_id": "multi-origin",
+  "oracle_notes": [
+    "L1: four Q/principal 40; L2: six Q/principal 120. Move two L1 units/principal 20 plus four L2 units/principal 80: B gets six/principal 100.",
+    "One outgoing economic leg and one incoming leg each span two allocations. There is no disposal and no destination purchase."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "4",
+        "principal": "60"
+      },
+      "BQ": {
+        "units": "6",
+        "principal": "100"
+      }
+    },
+    "allocation_count": 4,
+    "transfer_allocation_count": 2,
+    "transfer_disposal_count": 0
+  },
+  "negative_cases": [
+    {
+      "id": "aggregate-is-not-basis",
+      "mutation": "selection_alternative",
+      "owner": "recorded-allocation",
+      "expected": "different-principal"
+    }
+  ],
+  "events": [
+    {
+      "id": "origins",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED two fills: four Q total USD 40 broker lot FIRST; six Q total USD 120 broker lot SECOND; fees zero.",
+      "legs": [
+        {
+          "id": "origins-q",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "160",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "origins-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-160",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-160",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "orig1",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "origin1",
+              "role": "target",
+              "posting": "origins-q",
+              "position": "AQ",
+              "lot": "L1",
+              "units": "4",
+              "principal": "40",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "orig2",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "origin2",
+              "role": "target",
+              "posting": "origins-q",
+              "position": "AQ",
+              "lot": "L2",
+              "units": "6",
+              "principal": "120",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@L1",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:origins",
+            "origin_posting_id": "@origins-q",
+            "origin_key": "FIRST",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          },
+          {
+            "lot_id": "@L2",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:origins",
+            "origin_posting_id": "@origins-q",
+            "origin_key": "SECOND",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "selected-move",
+      "date": "2026-01-05",
+      "operation": "transfer",
+      "evidence": "INVENTED selected movement: transfer six Q A to B; reviewed FIRST two, SECOND four.",
+      "legs": [
+        {
+          "id": "selected-out",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-6",
+          "role": "principal"
+        },
+        {
+          "id": "selected-in",
+          "position": "BQ",
+          "commodity": "Q",
+          "amount": "6",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "selected-1",
+          "kind": "transfer",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "selected-1-out",
+              "role": "source",
+              "posting": "selected-out",
+              "position": "AQ",
+              "lot": "L1",
+              "units": "-2",
+              "principal": "-20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "selected-1-in",
+              "role": "target",
+              "posting": "selected-in",
+              "position": "BQ",
+              "lot": "L1",
+              "units": "2",
+              "principal": "20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "selected-2",
+          "kind": "transfer",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "selected-2-out",
+              "role": "source",
+              "posting": "selected-out",
+              "position": "AQ",
+              "lot": "L2",
+              "units": "-4",
+              "principal": "-80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "selected-2-in",
+              "role": "target",
+              "posting": "selected-in",
+              "position": "BQ",
+              "lot": "L2",
+              "units": "4",
+              "principal": "80",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "links": [
+          {
+            "link_id": "@selected-link",
+            "member_role": "outgoing",
+            "member_kind": "posting",
+            "member_id": "@selected-out",
+            "link_kind": "transfer",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@selected-link",
+            "member_role": "incoming",
+            "member_kind": "posting",
+            "member_id": "@selected-in",
+            "link_kind": "transfer",
+            "origin": "derived"
+          }
+        ]
+      }
+    }
+  ]
+}

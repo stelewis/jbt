@@ -1,0 +1,276 @@
+{
+  "extends": "compound-expensed.json",
+  "case_id": "compound-capitalized",
+  "expected_answers": {
+    "inventory": {
+      "AQ": {
+        "units": "12",
+        "principal": "60",
+        "capitalized_fee": "1.20",
+        "expensed_fee": "0"
+      },
+      "BQ": {
+        "units": "3",
+        "principal": "15",
+        "capitalized_fee": "0.30",
+        "expensed_fee": "0"
+      }
+    },
+    "disposal": {
+      "principal": "25",
+      "acquisition_fee": "0.50",
+      "proceeds": "40",
+      "disposal_fee": "1",
+      "gross_result": "14.50",
+      "net_performance": "13.50"
+    },
+    "positions": {
+      "cash-A": "-102",
+      "cash-B": "39"
+    }
+  },
+  "oracle_notes": [
+    "Capitalized acquisition fees move with exactly the same unit fractions as the expensed policy. Acquisition carrying cost 102 balances cash -102 without a fee expense weight.",
+    "Disposed carrying cost 25.50 against gross proceeds 40 gives gross result 14.50. Disposal fee 1 remains an expense. Original fee 2 is never paid twice."
+  ],
+  "replacements": [
+    {
+      "path": [
+        "policies",
+        0,
+        "payload",
+        "acquisition_treatment"
+      ],
+      "value": "capitalized"
+    },
+    {
+      "path": [
+        "events",
+        0,
+        "legs",
+        0,
+        "weights"
+      ],
+      "value": [
+        {
+          "kind": "principal",
+          "amount": "100",
+          "commodity": "USD"
+        },
+        {
+          "kind": "capitalized_fee",
+          "amount": "2",
+          "commodity": "USD"
+        }
+      ]
+    },
+    {
+      "path": [
+        "events",
+        0,
+        "legs",
+        2,
+        "weights"
+      ],
+      "value": []
+    },
+    {
+      "path": [
+        "events",
+        0,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "capitalized_fee"
+      ],
+      "value": "2"
+    },
+    {
+      "path": [
+        "events",
+        0,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "expensed_fee"
+      ],
+      "value": "0"
+    },
+    {
+      "path": [
+        "events",
+        0,
+        "rows",
+        "fee_allocations",
+        0,
+        "treatment"
+      ],
+      "value": "capitalized"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "capitalized_fee"
+      ],
+      "value": "-2"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "expensed_fee"
+      ],
+      "value": "0"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "capitalized_fee"
+      ],
+      "value": "2"
+    },
+    {
+      "path": [
+        "events",
+        1,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "expensed_fee"
+      ],
+      "value": "0"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "capitalized_fee"
+      ],
+      "value": "-0.80"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "expensed_fee"
+      ],
+      "value": "0"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "capitalized_fee"
+      ],
+      "value": "0.80"
+    },
+    {
+      "path": [
+        "events",
+        2,
+        "allocations",
+        0,
+        "changes",
+        1,
+        "expensed_fee"
+      ],
+      "value": "0"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "capitalized_fee"
+      ],
+      "value": "-0.50"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "allocations",
+        0,
+        "changes",
+        0,
+        "expensed_fee"
+      ],
+      "value": "0"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "legs",
+        0,
+        "weights"
+      ],
+      "value": [
+        {
+          "kind": "principal",
+          "amount": "-25",
+          "commodity": "USD"
+        },
+        {
+          "kind": "capitalized_fee",
+          "amount": "-0.50",
+          "commodity": "USD"
+        }
+      ]
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "legs",
+        3,
+        "amount"
+      ],
+      "value": "-14.50"
+    },
+    {
+      "path": [
+        "events",
+        3,
+        "legs",
+        3,
+        "weights",
+        0,
+        "amount"
+      ],
+      "value": "-14.50"
+    }
+  ]
+}

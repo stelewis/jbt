@@ -1,0 +1,52 @@
+{
+  "extends": "ordering-split-buy.json",
+  "case_id": "ordering-buy-split",
+  "replacements": [
+    {"path": ["event_order"], "value": ["buy", "later-buy", "split", "move", "sell"]},
+    {"path": ["events", 1, "legs", 0, "amount"], "value": "15"},
+    {
+      "path": ["events", 1, "allocations", 1],
+      "value": {
+        "id": "split-later-allocation",
+        "kind": "transformation",
+        "method": "@declaration:book",
+        "action": "@split-action",
+        "changes": [
+          {
+            "id": "split-later-source",
+            "role": "source",
+            "posting": "split-q",
+            "position": "AQ",
+            "lot": "L2",
+            "units": "-5",
+            "principal": "-25",
+            "capitalized_fee": "0",
+            "expensed_fee": "0"
+          },
+          {
+            "id": "split-later-target",
+            "role": "target",
+            "posting": "split-q",
+            "position": "AQ",
+            "lot": "L2",
+            "units": "10",
+            "principal": "25",
+            "capitalized_fee": "0",
+            "expensed_fee": "0"
+          }
+        ]
+      }
+    },
+    {"path": ["policies", 2, "id"], "value": "buy-before-split"},
+    {"path": ["policies", 2, "payload", "before"], "value": {"txn_id": "@later-buy", "step_key": "acquisition"}},
+    {"path": ["policies", 2, "payload", "after"], "value": {"txn_id": "@split", "step_key": "action"}},
+    {"path": ["policies", 2, "payload", "reason"], "value": "Retained acquisition precedes issuer split and both acquired roots double."},
+    {"path": ["rows", "book_step_dependencies", 0, "before_step_id"], "value": "@step:later-buy"},
+    {"path": ["rows", "book_step_dependencies", 0, "after_step_id"], "value": "@step:split"},
+    {"path": ["rows", "book_step_dependencies", 0, "declaration_id"], "value": "@declaration:buy-before-split"}
+  ],
+  "oracle_notes": [
+    "Before the same-day split, first and second buys hold 10+5 Q. The 2:1 action updates both independent roots, yielding 20+10=30 Q.",
+    "The opposite reviewed order yields 20+5=25 Q, so a stable hash tie-break cannot select economic precedence."
+  ]
+}

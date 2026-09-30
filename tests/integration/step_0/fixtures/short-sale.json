@@ -1,0 +1,275 @@
+{
+  "extends": "common.json",
+  "case_id": "short-sale",
+  "positions": [
+    {
+      "id": "borrowed-Q",
+      "account": "A",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "lender",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:short-book"
+    }
+  ],
+  "policies": [
+    {
+      "id": "short-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@borrowed-Q"
+        ],
+        "method": "FIFO",
+        "acquisition_date_role": "traded",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Borrowed security obligation is negative two Q/principal -20, distinct from proceeds +20 cash. Cover one Q at 12 releases principal 10 and incurs book loss 2.",
+    "Borrow fee 1 and substitute dividend 3 are distinct expenses, neither added to the short principal. Remaining obligation is one Q/principal -10; cash 20-1-3-12=4."
+  ],
+  "expected_answers": {
+    "inventory": {
+      "borrowed-Q": {
+        "units": "-1",
+        "principal": "-10"
+      }
+    },
+    "positions": {
+      "cash-A": "4"
+    },
+    "cover_loss": "2",
+    "borrow_fee": "1",
+    "substitute_dividend": "3"
+  },
+  "negative_cases": [
+    {
+      "id": "close-negative-as-positive",
+      "mutation": "short_sign",
+      "owner": "inventory-replay",
+      "expected": "source-sign"
+    },
+    {
+      "id": "borrow-fee-netted",
+      "mutation": "fee_principal",
+      "owner": "component-ownership",
+      "expected": "fee-distinct"
+    }
+  ],
+  "events": [
+    {
+      "id": "short-open",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED explicit short sale: borrow two Q from lender and sell for USD 20; negative position permitted by declared relationship; zero acquisition fees.",
+      "legs": [
+        {
+          "id": "short-q",
+          "position": "borrowed-Q",
+          "commodity": "Q",
+          "amount": "-2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "short-proceeds",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "20",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "short-origin",
+          "kind": "acquisition",
+          "method": "@declaration:short-book",
+          "changes": [
+            {
+              "id": "short-created",
+              "role": "target",
+              "posting": "short-q",
+              "position": "borrowed-Q",
+              "lot": "short-lot",
+              "units": "-2",
+              "principal": "-20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@short-lot",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:short-open",
+            "origin_posting_id": "@short-q",
+            "origin_key": "borrowed-origin",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-costs",
+      "date": "2026-01-03",
+      "operation": "quantity",
+      "evidence": "INVENTED lender charges: borrow fee USD 1 and substitute dividend USD 3, separately stated.",
+      "legs": [
+        {
+          "id": "short-cost-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-4",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-4",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "borrow-fee",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "borrow_fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "substitute-dividend",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "3",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "3",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "short-cover",
+      "date": "2026-01-04",
+      "operation": "reduction",
+      "evidence": "INVENTED partial cover: buy and return one borrowed Q for USD 12; zero disposal fees.",
+      "legs": [
+        {
+          "id": "cover-q",
+          "position": "borrowed-Q",
+          "commodity": "Q",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "cover-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-12",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-12",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "cover-loss",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "2",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "2",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "short-reduce",
+          "kind": "reduction",
+          "method": "@declaration:short-book",
+          "changes": [
+            {
+              "id": "short-consumed",
+              "role": "source",
+              "posting": "cover-q",
+              "position": "borrowed-Q",
+              "lot": "short-lot",
+              "units": "1",
+              "principal": "10",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@short-disposal",
+            "allocation_id": "@short-reduce",
+            "proceeds_total": {
+              "n": "-12"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,549 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/obligations",
+  "counterparties": [
+    "new-lender"
+  ],
+  "positions": [
+    {
+      "id": "short",
+      "account": "A",
+      "commodity": "Q",
+      "kind": "claim",
+      "counterparty": "lender",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:short-book"
+    },
+    {
+      "id": "replacement-debt",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "new-lender",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "policies": [
+    {
+      "id": "short-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@short"
+        ],
+        "method": "STRICT",
+        "acquisition_date_role": "posted",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Borrow-and-sell two shares recognizes a -2 Q obligation with principal -20 and cash proceeds 20. Borrow fee 1 and substitute dividend 2 remain separate cash expenses.",
+    "Cover pays 26 to consume the two-share obligation carried at -20; the economic loss is 6, not a positive asset acquisition.",
+    "A distinct margin purchase holds two shares at 20 financed by debit 15 and cash 5. Liquidating one share for 8 releases basis 10 and realizes loss 2, leaving one share basis 10.",
+    "Remortgage closes old debit 15 and opens a different lender's obligation 15. A pending unsplit payment 5 cannot invent a principal/interest schedule."
+  ],
+  "expected_answers": {
+    "quantities": {
+      "short": "0",
+      "AQ": "1",
+      "cash-A": "-6",
+      "debt": "0",
+      "replacement-debt": "-15"
+    },
+    "inventory": {
+      "AQ": {
+        "units": "1",
+        "principal": "10",
+        "capitalized_fee": "0",
+        "expensed_fee": "0"
+      }
+    },
+    "category_amounts": {
+      "expense": "3",
+      "result": "8"
+    },
+    "coverage": [
+      "short_obligation",
+      "borrow_fee",
+      "substitute_dividend",
+      "short_cover_loss",
+      "margin_debit",
+      "partial_liquidation",
+      "remortgage",
+      "unknown_amortization_split"
+    ]
+  },
+  "events": [
+    {
+      "id": "short-sale",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED securities-lending and execution confirmation: Q 2 borrowed from lender and sold for USD 20; obligation is -2 Q with signed principal -20.",
+      "legs": [
+        {
+          "id": "short-units",
+          "position": "short",
+          "commodity": "Q",
+          "amount": "-2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "short-proceeds",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "20",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "short-acq",
+          "kind": "acquisition",
+          "method": "@declaration:short-book",
+          "changes": [
+            {
+              "id": "short-entry",
+              "role": "target",
+              "posting": "short-units",
+              "position": "short",
+              "lot": "SL",
+              "units": "-2",
+              "principal": "-20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@SL",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:short-sale",
+            "origin_posting_id": "@short-units",
+            "origin_key": "borrowed-obligation",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "borrow-charges",
+      "date": "2026-01-03",
+      "operation": "boundary",
+      "evidence": "INVENTED lender statement: borrow fee USD 1 and substitute dividend USD 2 paid separately, neither is share principal.",
+      "legs": [
+        {
+          "id": "borrow-fee",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "borrow_fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "substitute-dividend",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "2",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "borrow-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-3",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-3",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cover",
+      "date": "2026-01-04",
+      "operation": "reduction",
+      "evidence": "INVENTED cover confirmation: pay USD 26 to deliver two Q to lender and extinguish -2 Q obligation, whose released signed basis is +20; economic loss USD 6.",
+      "legs": [
+        {
+          "id": "cover-units",
+          "position": "short",
+          "commodity": "Q",
+          "amount": "2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "cover-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-26",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-26",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "cover-loss",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "6",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "6",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "cover-allocation",
+          "kind": "reduction",
+          "method": "@declaration:short-book",
+          "changes": [
+            {
+              "id": "short-exit",
+              "role": "source",
+              "posting": "cover-units",
+              "position": "short",
+              "lot": "SL",
+              "units": "2",
+              "principal": "20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@cover-disposal",
+            "allocation_id": "@cover-allocation",
+            "proceeds_total": {
+              "n": "-26"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "margin-buy",
+      "date": "2026-01-05",
+      "operation": "acquisition",
+      "evidence": "INVENTED margin execution: Q 2 costs USD 20, financed by lender debit USD 15 and free cash USD 5.",
+      "legs": [
+        {
+          "id": "margin-shares",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "margin-debit",
+          "position": "debt",
+          "commodity": "USD",
+          "amount": "-15",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-15",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "margin-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-5",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-5",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "margin-acq",
+          "kind": "acquisition",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "margin-entry",
+              "role": "target",
+              "posting": "margin-shares",
+              "position": "AQ",
+              "lot": "ML",
+              "units": "2",
+              "principal": "20",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@ML",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:margin-buy",
+            "origin_posting_id": "@margin-shares",
+            "origin_key": "margin-stock",
+            "acquisition_date": "2026-01-05",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "partial-liquidation",
+      "date": "2026-01-06",
+      "operation": "reduction",
+      "evidence": "INVENTED venue-initiated liquidation sells one Q from ML for USD 8, releasing basis 10. Debit balance remains separately outstanding.",
+      "legs": [
+        {
+          "id": "liquidated-stock",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-10",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "liquidation-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "8",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "8",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "liquidation-loss",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "2",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "2",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "margin-reduce",
+          "kind": "reduction",
+          "method": "@declaration:book",
+          "changes": [
+            {
+              "id": "margin-exit",
+              "role": "source",
+              "posting": "liquidated-stock",
+              "position": "AQ",
+              "lot": "ML",
+              "units": "-1",
+              "principal": "-10",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@margin-disposal",
+            "allocation_id": "@margin-reduce",
+            "proceeds_total": {
+              "n": "8"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "refinance",
+      "date": "2026-01-07",
+      "operation": "quantity",
+      "evidence": "INVENTED refinancing agreement: lender's USD 15 obligation extinguished by new-lender USD 15 advance, a new relationship despite same currency and account.",
+      "legs": [
+        {
+          "id": "old-loan-close",
+          "position": "debt",
+          "commodity": "USD",
+          "amount": "15",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "15",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "new-loan-open",
+          "position": "replacement-debt",
+          "commodity": "USD",
+          "amount": "-15",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-15",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unsplit-payment",
+      "date": "2026-01-08",
+      "operation": "boundary",
+      "state": "pending",
+      "evidence": "INVENTED pending loan payment USD 5; statement does not supply principal/interest split and no amortization calculation is declared. No recognized principal reduction.",
+      "legs": [
+        {
+          "id": "pending-payment",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-5",
+          "role": "cash"
+        }
+      ]
+    }
+  ],
+  "rows": {
+    "links": [
+      {
+        "link_id": "@short-chain",
+        "member_role": "open",
+        "member_kind": "transaction",
+        "member_id": "@short-sale",
+        "link_kind": "trade_chain",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@short-chain",
+        "member_role": "close",
+        "member_kind": "transaction",
+        "member_id": "@cover",
+        "link_kind": "trade_chain",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@refinancing",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@margin-buy",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@refinancing",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@refinance",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      }
+    ]
+  }
+}

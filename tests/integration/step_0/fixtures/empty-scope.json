@@ -1,0 +1,111 @@
+{
+  "extends": "common.json",
+  "case_id": "empty-scope",
+  "accounts": [{"id": "C"}],
+  "policies": [
+    {
+      "id": "empty-account",
+      "kind": "assertion_scope",
+      "payload": {
+        "scope_id": "@empty",
+        "account_id": "@C",
+        "scope_kind": "positions",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "account_all",
+        "position_ids": [],
+        "quote_commodity_id": null,
+        "valuation_evidence": [],
+        "tolerance": {"n": "0"}
+      }
+    },
+    {
+      "id": "zero-positions",
+      "kind": "assertion_scope",
+      "payload": {
+        "scope_id": "@selected-zero",
+        "account_id": "@A",
+        "scope_kind": "positions",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "positions",
+        "position_ids": ["@AR", "@cash-A"],
+        "quote_commodity_id": null,
+        "valuation_evidence": [],
+        "tolerance": {"n": "0"}
+      }
+    }
+  ],
+  "oracle_notes": [
+    "The complete empty account C scope contains no positions and no balance rows; no zero holding is invented.",
+    "The account A comparison scope has selected cash and debt positions, including zero balances, and completeness fails if either recorded position is removed."
+  ],
+  "events": [
+    {
+      "id": "empty-notice",
+      "date": "2026-01-31",
+      "operation": "boundary",
+      "kind": "note",
+      "state": "pending",
+      "evidence": "INVENTED coverage notice: account C has no positions through January.",
+      "legs": []
+    }
+  ],
+  "expected_answers": {"empty_count": 0, "selected_count": 2},
+  "rows": {
+    "assertion_scopes": [
+      {
+        "scope_id": "@empty",
+        "account_id": "@C",
+        "declaration_id": "@declaration:empty-account",
+        "scope_kind": "positions",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "account_all",
+        "position_ids": []
+      },
+      {
+        "scope_id": "@selected-zero",
+        "account_id": "@A",
+        "declaration_id": "@declaration:zero-positions",
+        "scope_kind": "positions",
+        "measurement": "units",
+        "coverage_basis": "settled-units",
+        "selection": "positions",
+        "position_ids": ["@AR", "@cash-A"]
+      }
+    ],
+    "balance_assertions": [
+      {
+        "assertion_set_id": "@empty-close",
+        "scope_id": "@empty",
+        "date": "2026-01-31",
+        "assertion_kind": "closing",
+        "is_complete": true
+      },
+      {
+        "assertion_set_id": "@zero-close",
+        "scope_id": "@selected-zero",
+        "date": "2026-01-31",
+        "assertion_kind": "closing",
+        "is_complete": true
+      }
+    ],
+    "balances": [
+      {
+        "balance_id": "@zero-R",
+        "assertion_set_id": "@zero-close",
+        "position_id": "@AR",
+        "commodity_id": "@R",
+        "amount": {"n": "0"}
+      },
+      {
+        "balance_id": "@zero-USD",
+        "assertion_set_id": "@zero-close",
+        "position_id": "@cash-A",
+        "commodity_id": "@USD",
+        "amount": {"n": "0"}
+      }
+    ]
+  }
+}

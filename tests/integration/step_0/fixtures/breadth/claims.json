@@ -1,0 +1,721 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/claims",
+  "counterparties": [
+    "issuer",
+    "pension-trust",
+    "failed-exchange"
+  ],
+  "commodities": [
+    {
+      "id": "ETF",
+      "kind": "etf"
+    },
+    {
+      "id": "ETN",
+      "kind": "other",
+      "fields": {
+        "terms_declaration_id": "@declaration:etn-terms"
+      }
+    },
+    {
+      "id": "NOTE",
+      "kind": "other",
+      "fields": {
+        "terms_declaration_id": "@declaration:note-terms"
+      }
+    },
+    {
+      "id": "CONVERTIBLE",
+      "kind": "other",
+      "fields": {
+        "terms_declaration_id": "@declaration:convertible-terms"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "etf-property",
+      "account": "A",
+      "commodity": "ETF",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "etn-claim",
+      "account": "A",
+      "commodity": "ETN",
+      "kind": "claim",
+      "counterparty": "issuer",
+      "measurement": "quantity",
+      "inventory": "quantity",
+      "terms": "@declaration:etn-terms"
+    },
+    {
+      "id": "structured",
+      "account": "A",
+      "commodity": "NOTE",
+      "kind": "claim",
+      "counterparty": "issuer",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:claim-book",
+      "terms": "@declaration:note-terms"
+    },
+    {
+      "id": "convertible",
+      "account": "A",
+      "commodity": "CONVERTIBLE",
+      "kind": "claim",
+      "counterparty": "issuer",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:claim-book",
+      "terms": "@declaration:convertible-terms"
+    },
+    {
+      "id": "retirement",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "pension-trust",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "exchange-failure",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "failed-exchange",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "policies": [
+    {
+      "id": "claim-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@structured",
+          "@convertible"
+        ],
+        "method": "STRICT",
+        "acquisition_date_role": "posted",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    },
+    {
+      "id": "etn-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@ETN",
+        "payoff": {
+          "kind": "stated_cashflows",
+          "flows": [
+            {
+              "flow_key": "redemption",
+              "date": "2026-12-31",
+              "role": "redemption",
+              "amount": {
+                "amount": {
+                  "n": "10"
+                },
+                "commodity_id": "@USD"
+              }
+            }
+          ]
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-12-31",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:claims-open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "note-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@NOTE",
+        "payoff": {
+          "kind": "conditional",
+          "underlying_ids": [
+            "@Q"
+          ],
+          "conditions": [
+            {
+              "condition_key": "barrier",
+              "kind": "barrier",
+              "underlying_id": "@Q",
+              "level": {
+                "amount": {
+                  "n": "8"
+                },
+                "commodity_id": "@USD"
+              },
+              "monitoring": "continuous",
+              "comparison": "lte",
+              "observation_dates": [],
+              "event_evidence_required": true
+            }
+          ],
+          "cashflows": [
+            {
+              "flow_key": "coupon",
+              "condition_key": "barrier",
+              "date": "2026-01-04",
+              "amount": {
+                "amount": {
+                  "n": "5"
+                },
+                "commodity_id": "@USD"
+              }
+            }
+          ]
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-12-31",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:issuer-coupon"
+          }
+        ]
+      }
+    },
+    {
+      "id": "convertible-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@CONVERTIBLE",
+        "payoff": {
+          "kind": "conditional",
+          "underlying_ids": [
+            "@Q"
+          ],
+          "conditions": [
+            {
+              "condition_key": "conversion",
+              "kind": "conversion",
+              "underlying_id": null,
+              "level": null,
+              "monitoring": "source_event",
+              "comparison": null,
+              "observation_dates": [],
+              "event_evidence_required": true
+            }
+          ],
+          "cashflows": []
+        },
+        "settlement": {
+          "mode": "physical",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-12-31",
+        "deliverables": [
+          {
+            "deliverable_key": "conversion-shares",
+            "commodity_id": "@Q",
+            "units_per_contract": {
+              "n": "5"
+            },
+            "role": "underlying",
+            "condition_key": "conversion"
+          }
+        ],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:convert"
+          }
+        ]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "ETF property and ETN issuer claim are distinct relationships despite similar market exposure. Retirement trust USD 30 and failed-exchange USD 40 remain separate counterparties, not free cash.",
+    "Structured note costs 100 and convertible costs 50. Only issuer-stated barrier coupon 5 is recognized; an absent continuous path never proves or refutes a separate trigger.",
+    "Issuer conversion surrenders one convertible carried at 50 for five Q retaining principal 50. Structured note remains one unit at 100, and cash from these events is -145."
+  ],
+  "expected_answers": {
+    "quantities": {
+      "etf-property": "1",
+      "etn-claim": "1",
+      "retirement": "30",
+      "exchange-failure": "40",
+      "structured": "1",
+      "convertible": "0",
+      "AQ": "5",
+      "cash-A": "-145"
+    },
+    "inventory": {
+      "structured": {
+        "units": "1",
+        "principal": "100",
+        "capitalized_fee": "0",
+        "expensed_fee": "0"
+      },
+      "AQ": {
+        "units": "5",
+        "principal": "50",
+        "capitalized_fee": "0",
+        "expensed_fee": "0"
+      }
+    },
+    "condition_outcomes": {
+      "issuer_coupon": "5",
+      "missing_intraday_path": null
+    },
+    "coverage": [
+      "etn_vs_etf",
+      "structured_note",
+      "issuer_barrier_evidence",
+      "missing_intraday_path",
+      "convertible_bond",
+      "retirement_claim",
+      "exchange_failure_claim"
+    ]
+  },
+  "events": [
+    {
+      "id": "claims-open",
+      "date": "2026-01-02",
+      "operation": "opening",
+      "kind": "opening",
+      "evidence": "INVENTED custody declaration: own ETF 1; issuer ETN claim 1; pension trust USD 30; failed-exchange admitted claim USD 40. None of the latter are custodian cash.",
+      "legs": [
+        {
+          "id": "etf-units",
+          "position": "etf-property",
+          "commodity": "ETF",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "1",
+              "commodity": "ETF"
+            }
+          ]
+        },
+        {
+          "id": "etf-equity",
+          "category": "opening-equity",
+          "commodity": "ETF",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-1",
+              "commodity": "ETF"
+            }
+          ]
+        },
+        {
+          "id": "etn-units",
+          "position": "etn-claim",
+          "commodity": "ETN",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "1",
+              "commodity": "ETN"
+            }
+          ]
+        },
+        {
+          "id": "etn-equity",
+          "category": "opening-equity",
+          "commodity": "ETN",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-1",
+              "commodity": "ETN"
+            }
+          ]
+        },
+        {
+          "id": "retirement-claim",
+          "position": "retirement",
+          "commodity": "USD",
+          "amount": "30",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "30",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "failure-claim",
+          "position": "exchange-failure",
+          "commodity": "USD",
+          "amount": "40",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "40",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "claim-equity",
+          "category": "opening-equity",
+          "commodity": "USD",
+          "amount": "-70",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-70",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "note-acquisition",
+      "date": "2026-01-03",
+      "operation": "acquisition",
+      "evidence": "INVENTED issuer note purchase NOTE 1 for USD 100 and convertible CONVERTIBLE 1 for USD 50; no fees.",
+      "legs": [
+        {
+          "id": "note-buy",
+          "position": "structured",
+          "commodity": "NOTE",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "convertible-buy",
+          "position": "convertible",
+          "commodity": "CONVERTIBLE",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "50",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "claims-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-150",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-150",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "note-acq",
+          "kind": "acquisition",
+          "method": "@declaration:claim-book",
+          "changes": [
+            {
+              "id": "note-entry",
+              "role": "target",
+              "posting": "note-buy",
+              "position": "structured",
+              "lot": "NL",
+              "units": "1",
+              "principal": "100",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "convertible-acq",
+          "kind": "acquisition",
+          "method": "@declaration:claim-book",
+          "changes": [
+            {
+              "id": "convertible-entry",
+              "role": "target",
+              "posting": "convertible-buy",
+              "position": "convertible",
+              "lot": "CBL",
+              "units": "1",
+              "principal": "50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@NL",
+            "commodity_id": "@NOTE",
+            "creation_step_id": "@step:note-acquisition",
+            "origin_posting_id": "@note-buy",
+            "origin_key": "note-root",
+            "acquisition_date": "2026-01-03",
+            "book_commodity_id": "@USD"
+          },
+          {
+            "lot_id": "@CBL",
+            "commodity_id": "@CONVERTIBLE",
+            "creation_step_id": "@step:note-acquisition",
+            "origin_posting_id": "@convertible-buy",
+            "origin_key": "convertible-root",
+            "acquisition_date": "2026-01-03",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "issuer-coupon",
+      "date": "2026-01-04",
+      "operation": "boundary",
+      "evidence": "INVENTED signed issuer notice explicitly states barrier triggered and coupon USD 5 payable and paid. No reconstructed intraday price path is supplied.",
+      "legs": [
+        {
+          "id": "coupon-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "5",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "5",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "coupon-income",
+          "category": "income",
+          "commodity": "USD",
+          "amount": "-5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-5",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "observations": [
+          {
+            "observation_id": "@issuer-trigger",
+            "record_kind": "transactions",
+            "record_id": [
+              "@issuer-coupon"
+            ],
+            "field_name": "issuer_barrier_event",
+            "observation_kind": "source_field",
+            "value_type": "text",
+            "text_value": "issuer_confirmed",
+            "source_record_id": "@source:issuer-coupon"
+          }
+        ]
+      }
+    },
+    {
+      "id": "missing-path",
+      "date": "2026-01-05",
+      "operation": "boundary",
+      "state": "pending",
+      "evidence": "INVENTED separate conditional observation: intraday path unavailable and no issuer trigger notice. Potential coupon cannot be evaluated and creates no financial legs.",
+      "legs": [],
+      "rows": {
+        "observations": [
+          {
+            "observation_id": "@missing-path-observation",
+            "record_kind": "transactions",
+            "record_id": [
+              "@missing-path"
+            ],
+            "field_name": "continuous_path_availability",
+            "observation_kind": "source_field",
+            "value_type": "text",
+            "text_value": "unavailable",
+            "source_record_id": "@source:missing-path"
+          }
+        ]
+      }
+    },
+    {
+      "id": "convert",
+      "date": "2026-01-06",
+      "operation": "quantity",
+      "evidence": "INVENTED issuer conversion notice: CONVERTIBLE 1 surrendered and Q 5 delivered. Declared book carryover retains USD 50 principal.",
+      "legs": [
+        {
+          "id": "convertible-close",
+          "position": "convertible",
+          "commodity": "CONVERTIBLE",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-50",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "conversion-shares",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "50",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "conversion-allocation",
+          "kind": "transformation",
+          "method": "@declaration:claim-book",
+          "changes": [
+            {
+              "id": "convertible-exit",
+              "role": "source",
+              "posting": "convertible-close",
+              "position": "convertible",
+              "lot": "CBL",
+              "units": "-1",
+              "principal": "-50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "conversion-entry",
+              "role": "target",
+              "posting": "conversion-shares",
+              "position": "AQ",
+              "lot": "CQS",
+              "units": "5",
+              "principal": "50",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@CQS",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:convert",
+            "parent_lot_id": "@CBL",
+            "origin_key": "converted-share-branch",
+            "acquisition_date": "2026-01-03",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    }
+  ],
+  "rows": {
+    "links": [
+      {
+        "link_id": "@conversion-life",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@note-acquisition",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@conversion-life",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@convert",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      }
+    ]
+  }
+}

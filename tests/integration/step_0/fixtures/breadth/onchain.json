@@ -1,0 +1,1004 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/onchain",
+  "commodities": [
+    {
+      "id": "NATIVE",
+      "kind": "crypto"
+    },
+    {
+      "id": "WRAPPED",
+      "kind": "crypto"
+    },
+    {
+      "id": "USDCA",
+      "kind": "crypto"
+    },
+    {
+      "id": "USDCB",
+      "kind": "crypto"
+    },
+    {
+      "id": "GAS",
+      "kind": "crypto"
+    },
+    {
+      "id": "LP",
+      "kind": "crypto"
+    },
+    {
+      "id": "REBASE",
+      "kind": "crypto"
+    },
+    {
+      "id": "FORK",
+      "kind": "crypto"
+    },
+    {
+      "id": "DROP",
+      "kind": "crypto"
+    },
+    {
+      "id": "NFT1",
+      "kind": "other",
+      "name": "Invented chain A contract 0xSYNTH token 1"
+    },
+    {
+      "id": "NFT2",
+      "kind": "other",
+      "name": "Invented chain A contract 0xSYNTH token 2"
+    }
+  ],
+  "positions": [
+    {
+      "id": "native",
+      "account": "A",
+      "commodity": "NATIVE",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "wrapped",
+      "account": "A",
+      "commodity": "WRAPPED",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "stable-a",
+      "account": "A",
+      "commodity": "USDCA",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "stable-b",
+      "account": "B",
+      "commodity": "USDCB",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "gas",
+      "account": "A",
+      "commodity": "GAS",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "liquidity",
+      "account": "A",
+      "commodity": "LP",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "rebase",
+      "account": "A",
+      "commodity": "REBASE",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "fork",
+      "account": "A",
+      "commodity": "FORK",
+      "kind": "property",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:unknown-book"
+    },
+    {
+      "id": "airdrop",
+      "account": "A",
+      "commodity": "DROP",
+      "kind": "property",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:unknown-book"
+    },
+    {
+      "id": "nft1-a",
+      "account": "A",
+      "commodity": "NFT1",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "nft1-b",
+      "account": "B",
+      "commodity": "NFT1",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    },
+    {
+      "id": "nft2-a",
+      "account": "A",
+      "commodity": "NFT2",
+      "kind": "property",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "policies": [
+    {
+      "id": "unknown-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@fork",
+          "@airdrop"
+        ],
+        "method": "FIFO",
+        "acquisition_date_role": "posted",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 8,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Quantity-only mechanical events deliberately make no tax or valuation determination. Starting NATIVE 10, wrap -2, unwrap +1, LP -2+1.5, canonical receipt +1 and subsequent reversal -0.5 leaves 9.",
+    "Bridge sends chain-A USDCA 3 and receives chain-B USDCB 3: same displayed USDC never merges identities. LP deposit uses USDCA 4 and withdrawal returns 5, leaving USDCA 8. Spending one USDCB leaves 2, not USD cash.",
+    "LP units go +1 then -1; returned asset ratio changes from 2:4 to 1.5:5. REBASE 10 increases by stated 1 to 11. Failed transfer consumes only GAS 0.1, leaving 1.9.",
+    "NFT token 1 moves A to B while token 2 remains in A. Fork 1 and airdrop 2 have unknown principal and fees, not zero cost.",
+    "Retracted orphan-block receipt 4 has no recognized effect. A replacement canonical receipt 1 is distinct from the later recognized reversal 0.5."
+  ],
+  "expected_answers": {
+    "quantities": {
+      "native": "9",
+      "wrapped": "1",
+      "stable-a": "8",
+      "stable-b": "2",
+      "gas": "1.9",
+      "liquidity": "0",
+      "rebase": "11",
+      "fork": "1",
+      "airdrop": "2",
+      "nft1-a": "0",
+      "nft1-b": "1",
+      "nft2-a": "1"
+    },
+    "inventory": {
+      "fork": {
+        "units": "1",
+        "principal": null,
+        "capitalized_fee": null,
+        "expensed_fee": null
+      },
+      "airdrop": {
+        "units": "2",
+        "principal": null,
+        "capitalized_fee": null,
+        "expensed_fee": null
+      }
+    },
+    "coverage": [
+      "wallet_transfer",
+      "wrap",
+      "unwrap",
+      "bridge",
+      "rebase",
+      "fork_unknown_basis",
+      "airdrop_unknown_basis",
+      "liquidity_pool",
+      "nft_identity",
+      "chain_reorg",
+      "lifecycle_reversal",
+      "stablecoin_identity",
+      "stablecoin_settlement",
+      "failed_transfer_other_asset_fee"
+    ]
+  },
+  "events": [
+    {
+      "id": "wallet-open",
+      "date": "2026-01-01",
+      "operation": "opening",
+      "kind": "opening",
+      "evidence": "INVENTED wallet declaration: NATIVE 10, chain-A contract USDCA 10, GAS 2, REBASE 10 and contract 0xSYNTH NFT tokens 1 and 2 each one. All ledger addresses are fictional.",
+      "legs": [
+        {
+          "id": "native-open",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "NATIVE"
+            }
+          ]
+        },
+        {
+          "id": "native-equity",
+          "category": "opening-equity",
+          "commodity": "NATIVE",
+          "amount": "-10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-10",
+              "commodity": "NATIVE"
+            }
+          ]
+        },
+        {
+          "id": "stable-open",
+          "position": "stable-a",
+          "commodity": "USDCA",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "USDCA"
+            }
+          ]
+        },
+        {
+          "id": "stable-equity",
+          "category": "opening-equity",
+          "commodity": "USDCA",
+          "amount": "-10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-10",
+              "commodity": "USDCA"
+            }
+          ]
+        },
+        {
+          "id": "gas-open",
+          "position": "gas",
+          "commodity": "GAS",
+          "amount": "2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "2",
+              "commodity": "GAS"
+            }
+          ]
+        },
+        {
+          "id": "gas-equity",
+          "category": "opening-equity",
+          "commodity": "GAS",
+          "amount": "-2",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-2",
+              "commodity": "GAS"
+            }
+          ]
+        },
+        {
+          "id": "rebase-open",
+          "position": "rebase",
+          "commodity": "REBASE",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "REBASE"
+            }
+          ]
+        },
+        {
+          "id": "rebase-equity",
+          "category": "opening-equity",
+          "commodity": "REBASE",
+          "amount": "-10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-10",
+              "commodity": "REBASE"
+            }
+          ]
+        },
+        {
+          "id": "nft1-open",
+          "position": "nft1-a",
+          "commodity": "NFT1",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "1",
+              "commodity": "NFT1"
+            }
+          ]
+        },
+        {
+          "id": "nft1-equity",
+          "category": "opening-equity",
+          "commodity": "NFT1",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-1",
+              "commodity": "NFT1"
+            }
+          ]
+        },
+        {
+          "id": "nft2-open",
+          "position": "nft2-a",
+          "commodity": "NFT2",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "1",
+              "commodity": "NFT2"
+            }
+          ]
+        },
+        {
+          "id": "nft2-equity",
+          "category": "opening-equity",
+          "commodity": "NFT2",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-1",
+              "commodity": "NFT2"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "commodity_symbols": [
+          {
+            "symbol_id": "@symbol-a",
+            "commodity_id": "@USDCA",
+            "symbol": "USDC",
+            "exchange": "InventedChainA",
+            "valid_from": "2026-01-01"
+          },
+          {
+            "symbol_id": "@symbol-b",
+            "commodity_id": "@USDCB",
+            "symbol": "USDC",
+            "exchange": "InventedChainB",
+            "valid_from": "2026-01-01"
+          }
+        ],
+        "observations": [
+          {
+            "observation_id": "@token1-key",
+            "record_kind": "commodities",
+            "record_id": [
+              "@NFT1"
+            ],
+            "field_name": "chain_contract_token",
+            "observation_kind": "source_field",
+            "value_type": "text",
+            "text_value": "InventedChainA/0xSYNTH/1",
+            "source_record_id": "@source:wallet-open"
+          },
+          {
+            "observation_id": "@token2-key",
+            "record_kind": "commodities",
+            "record_id": [
+              "@NFT2"
+            ],
+            "field_name": "chain_contract_token",
+            "observation_kind": "source_field",
+            "value_type": "text",
+            "text_value": "InventedChainA/0xSYNTH/2",
+            "source_record_id": "@source:wallet-open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "wrap",
+      "date": "2026-01-02",
+      "operation": "quantity",
+      "evidence": "INVENTED wrap receipt: lock NATIVE 2 and mint WRAPPED 2. Mechanical correspondence only; no tax disposition policy.",
+      "legs": [
+        {
+          "id": "wrap-out",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "-2",
+          "role": "principal"
+        },
+        {
+          "id": "wrap-in",
+          "position": "wrapped",
+          "commodity": "WRAPPED",
+          "amount": "2",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "unwrap",
+      "date": "2026-01-03",
+      "operation": "quantity",
+      "evidence": "INVENTED unwrap receipt: burn WRAPPED 1 and release NATIVE 1.",
+      "legs": [
+        {
+          "id": "unwrap-out",
+          "position": "wrapped",
+          "commodity": "WRAPPED",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "unwrap-in",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "1",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "bridge-out",
+      "date": "2026-01-04",
+      "operation": "quantity",
+      "evidence": "INVENTED bridge send message SYNTH-MSG: chain-A contract USDCA 3 locked pending separate chain-B receipt.",
+      "legs": [
+        {
+          "id": "bridge-send",
+          "position": "stable-a",
+          "commodity": "USDCA",
+          "amount": "-3",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "bridge-in",
+      "date": "2026-01-05",
+      "operation": "quantity",
+      "evidence": "INVENTED bridge receive message SYNTH-MSG: chain-B contract USDCB 3 delivered. Source and destination source-scoped identities differ.",
+      "legs": [
+        {
+          "id": "bridge-receive",
+          "position": "stable-b",
+          "commodity": "USDCB",
+          "amount": "3",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "lp-deposit",
+      "date": "2026-01-06",
+      "operation": "quantity",
+      "evidence": "INVENTED pool deposit uses NATIVE 2 plus USDCA 4 and mints LP 1. No price inferred.",
+      "legs": [
+        {
+          "id": "pool-native-in",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "-2",
+          "role": "principal"
+        },
+        {
+          "id": "pool-stable-in",
+          "position": "stable-a",
+          "commodity": "USDCA",
+          "amount": "-4",
+          "role": "principal"
+        },
+        {
+          "id": "lp-mint",
+          "position": "liquidity",
+          "commodity": "LP",
+          "amount": "1",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "lp-withdraw",
+      "date": "2026-01-07",
+      "operation": "quantity",
+      "evidence": "INVENTED pool withdrawal burns LP 1 and returns changed mix NATIVE 1.5 and USDCA 5, not original deposited quantities.",
+      "legs": [
+        {
+          "id": "lp-burn",
+          "position": "liquidity",
+          "commodity": "LP",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "pool-native-out",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "1.5",
+          "role": "principal"
+        },
+        {
+          "id": "pool-stable-out",
+          "position": "stable-a",
+          "commodity": "USDCA",
+          "amount": "5",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "rebase-event",
+      "date": "2026-01-08",
+      "operation": "quantity",
+      "evidence": "INVENTED protocol rebase statement: REBASE balance increases from 10 to 11 by explicit delta +1. No cash income valuation supplied.",
+      "legs": [
+        {
+          "id": "rebase-delta",
+          "position": "rebase",
+          "commodity": "REBASE",
+          "amount": "1",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "fork-event",
+      "date": "2026-01-09",
+      "operation": "acquisition",
+      "evidence": "INVENTED fork allocation confirms FORK 1; acquisition basis and fee attribution are unavailable, not zero.",
+      "legs": [
+        {
+          "id": "fork-units",
+          "position": "fork",
+          "commodity": "FORK",
+          "amount": "1",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "fork-acq",
+          "kind": "acquisition",
+          "method": "@declaration:unknown-book",
+          "changes": [
+            {
+              "id": "fork-entry",
+              "role": "target",
+              "posting": "fork-units",
+              "position": "fork",
+              "lot": "FKL",
+              "units": "1",
+              "principal": null,
+              "capitalized_fee": null,
+              "expensed_fee": null
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@FKL",
+            "commodity_id": "@FORK",
+            "creation_step_id": "@step:fork-event",
+            "origin_posting_id": "@fork-units",
+            "origin_key": "fork-root",
+            "acquisition_date": "2026-01-09",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "airdrop-event",
+      "date": "2026-01-10",
+      "operation": "acquisition",
+      "evidence": "INVENTED airdrop receipt confirms DROP 2; no source valuation, basis allocation, or fee attribution.",
+      "legs": [
+        {
+          "id": "drop-units",
+          "position": "airdrop",
+          "commodity": "DROP",
+          "amount": "2",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "drop-acq",
+          "kind": "acquisition",
+          "method": "@declaration:unknown-book",
+          "changes": [
+            {
+              "id": "drop-entry",
+              "role": "target",
+              "posting": "drop-units",
+              "position": "airdrop",
+              "lot": "DL",
+              "units": "2",
+              "principal": null,
+              "capitalized_fee": null,
+              "expensed_fee": null
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@DL",
+            "commodity_id": "@DROP",
+            "creation_step_id": "@step:airdrop-event",
+            "origin_posting_id": "@drop-units",
+            "origin_key": "airdrop-root",
+            "acquisition_date": "2026-01-10",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "nft-transfer",
+      "date": "2026-01-11",
+      "operation": "quantity",
+      "evidence": "INVENTED transfer of chain-A contract 0xSYNTH token 1 from wallet A to B; token 2 remains in A.",
+      "legs": [
+        {
+          "id": "nft-out",
+          "position": "nft1-a",
+          "commodity": "NFT1",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-1",
+              "commodity": "NFT1"
+            }
+          ]
+        },
+        {
+          "id": "nft-in",
+          "position": "nft1-b",
+          "commodity": "NFT1",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "1",
+              "commodity": "NFT1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "failed-transfer",
+      "date": "2026-01-12",
+      "operation": "quantity",
+      "state": "cancelled",
+      "evidence": "INVENTED failed transfer intent NATIVE 2 reverted. No principal movement occurred, but separate network fee was consumed.",
+      "legs": [
+        {
+          "id": "failed-principal",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "-2",
+          "role": "principal"
+        }
+      ]
+    },
+    {
+      "id": "network-fee",
+      "date": "2026-01-12",
+      "operation": "boundary",
+      "evidence": "INVENTED finalized fee receipt GAS 0.1 consumed for failed transfer. Fee currency differs from intended NATIVE.",
+      "legs": [
+        {
+          "id": "gas-paid",
+          "position": "gas",
+          "commodity": "GAS",
+          "amount": "-0.1",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-0.1",
+              "commodity": "GAS"
+            }
+          ]
+        },
+        {
+          "id": "gas-expense",
+          "category": "expense",
+          "commodity": "GAS",
+          "amount": "0.1",
+          "role": "fee",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "0.1",
+              "commodity": "GAS"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "orphan-receipt",
+      "date": "2026-01-13",
+      "operation": "boundary",
+      "state": "retracted",
+      "evidence": "INVENTED orphan-block receipt NATIVE 4 was retracted by chain reorganization; remains inspectable, never recognized in final state.",
+      "legs": [
+        {
+          "id": "orphan-credit",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "4",
+          "role": "cash"
+        }
+      ]
+    },
+    {
+      "id": "canonical-receipt",
+      "date": "2026-01-14",
+      "operation": "boundary",
+      "evidence": "INVENTED canonical-chain replacement receipt NATIVE 1 finalized, not the orphan quantity 4.",
+      "legs": [
+        {
+          "id": "canonical-credit",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "1",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "1",
+              "commodity": "NATIVE"
+            }
+          ]
+        },
+        {
+          "id": "canonical-income",
+          "category": "income",
+          "commodity": "NATIVE",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-1",
+              "commodity": "NATIVE"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "later-reversal",
+      "date": "2026-01-15",
+      "operation": "boundary",
+      "evidence": "INVENTED subsequent disputed-settlement refund NATIVE 0.5 paid; a new recognized reversal, not rewriting canonical receipt.",
+      "legs": [
+        {
+          "id": "reversal-cash",
+          "position": "native",
+          "commodity": "NATIVE",
+          "amount": "-0.5",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-0.5",
+              "commodity": "NATIVE"
+            }
+          ]
+        },
+        {
+          "id": "reversal-income",
+          "category": "income",
+          "commodity": "NATIVE",
+          "amount": "0.5",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "0.5",
+              "commodity": "NATIVE"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stablecoin-payment",
+      "date": "2026-01-16",
+      "operation": "boundary",
+      "evidence": "INVENTED service paid with chain-B USDCB 1. Settlement is a token movement, not USD fiat cash.",
+      "legs": [
+        {
+          "id": "stable-payment",
+          "position": "stable-b",
+          "commodity": "USDCB",
+          "amount": "-1",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-1",
+              "commodity": "USDCB"
+            }
+          ]
+        },
+        {
+          "id": "stable-expense",
+          "category": "expense",
+          "commodity": "USDCB",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "1",
+              "commodity": "USDCB"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "rows": {
+    "links": [
+      {
+        "link_id": "@bridge-correspondence",
+        "member_role": "outgoing",
+        "member_kind": "posting",
+        "member_id": "@bridge-send",
+        "link_kind": "transfer",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@bridge-correspondence",
+        "member_role": "incoming",
+        "member_kind": "posting",
+        "member_id": "@bridge-receive",
+        "link_kind": "transfer",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@nft-correspondence",
+        "member_role": "outgoing",
+        "member_kind": "posting",
+        "member_id": "@nft-out",
+        "link_kind": "transfer",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@nft-correspondence",
+        "member_role": "incoming",
+        "member_kind": "posting",
+        "member_id": "@nft-in",
+        "link_kind": "transfer",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@failed-fee",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@failed-transfer",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@failed-fee",
+        "member_role": "fee",
+        "member_kind": "posting",
+        "member_id": "@gas-paid",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@reversal-life",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@canonical-receipt",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@reversal-life",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@later-reversal",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@wrap-chain",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@wrap",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@wrap-chain",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@unwrap",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@liquidity-chain",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@lp-deposit",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@liquidity-chain",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@lp-withdraw",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      }
+    ]
+  }
+}

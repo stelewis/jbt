@@ -1,0 +1,520 @@
+{
+  "extends": "common.json",
+  "case_id": "reference",
+  "commodities": [
+    {
+      "id": "F",
+      "kind": "contract",
+      "fields": {
+        "contract_multiplier": {
+          "n": "10"
+        },
+        "terms_declaration_id": "@declaration:linear"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "future",
+      "account": "A",
+      "commodity": "F",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "reference",
+      "inventory": "individual",
+      "booking": "@declaration:reference-book",
+      "terms": "@declaration:linear"
+    }
+  ],
+  "policies": [
+    {
+      "id": "reference-fees",
+      "kind": "fee_attribution",
+      "payload": {
+        "method": "pro_rata_units",
+        "acquisition_treatment": "attribution_only",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        },
+        "slices": []
+      }
+    },
+    {
+      "id": "reference-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@future"
+        ],
+        "method": "FIFO",
+        "acquisition_date_role": "traded",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:reference-fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    },
+    {
+      "id": "linear",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@F",
+        "payoff": {
+          "kind": "linear_difference",
+          "reference_commodity_id": "@USD",
+          "settlement_commodity_id": "@USD",
+          "multiplier": {
+            "n": "10"
+          }
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "final",
+          "reference_reset": "on_final_variation",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "separate_position",
+          "position_ids": [
+            "@margin"
+          ],
+          "commodity_ids": [
+            "@USD"
+          ]
+        },
+        "expiry": null,
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:reference-open"
+          }
+        ]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "One long at 100, multiplier 10: reset at 103 has stated cash (103-100)*10 = 30. Closing at 105 has (105-103)*10 = 20. Cash total 50, never 80.",
+    "Collateral begins 200 and a withdrawal of 40 leaves 160, with no reference reset or profit.",
+    "Concurrent quotes at one instant remain mark 103, index 102, trade 104; marked notional of two contracts is 2060, not a booked cost."
+  ],
+  "expected_answers": {
+    "settlement_total": "50",
+    "collateral": "160",
+    "open_contract_units": "0",
+    "reference_path": [
+      "100",
+      "103",
+      null
+    ],
+    "quotes": {
+      "mark": "103",
+      "index": "102",
+      "trade": "104"
+    },
+    "marked_notional_two": "2060",
+    "missing_settlement_quote": null
+  },
+  "negative_cases": [
+    {
+      "id": "stale-reference",
+      "mutation": "reference_before",
+      "owner": "reference-continuity",
+      "expected": "reference-mismatch"
+    },
+    {
+      "id": "collateral-reset",
+      "mutation": "collateral_only_reset",
+      "owner": "terms",
+      "expected": "variation-reset"
+    },
+    {
+      "id": "missing-multiplier",
+      "mutation": "missing_multiplier",
+      "owner": "contract-terms",
+      "expected": "required-term"
+    }
+  ],
+  "events": [
+    {
+      "id": "reference-open",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED exchange terms: one long F at reference 100, multiplier 10 USD, daily variation final; no premium or fees.",
+      "legs": [
+        {
+          "id": "future-open",
+          "position": "future",
+          "commodity": "F",
+          "amount": "1",
+          "role": "principal"
+        }
+      ],
+      "allocations": [
+        {
+          "id": "future-acq",
+          "kind": "acquisition",
+          "method": "@declaration:reference-book",
+          "changes": [
+            {
+              "id": "future-entry",
+              "role": "target",
+              "posting": "future-open",
+              "position": "future",
+              "lot": "FL",
+              "units": "1",
+              "principal": null,
+              "capitalized_fee": null,
+              "expensed_fee": null
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@FL",
+            "commodity_id": "@F",
+            "creation_step_id": "@step:reference-open",
+            "origin_posting_id": "@future-open",
+            "origin_key": "linear-entry",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": null
+          }
+        ],
+        "reference_changes": [
+          {
+            "reference_change_id": "@ref-entry",
+            "step_id": "@step:reference-open",
+            "position_id": "@future",
+            "lot_id": "@FL",
+            "change_kind": "entry",
+            "units": {
+              "n": "1"
+            },
+            "reference_after": {
+              "n": "100"
+            },
+            "reference_commodity_id": "@USD",
+            "terms_declaration_id": "@declaration:linear"
+          }
+        ]
+      }
+    },
+    {
+      "id": "collateral-open",
+      "date": "2026-01-02",
+      "operation": "opening",
+      "kind": "opening",
+      "evidence": "INVENTED opening custody balance: separate margin collateral USD 200.",
+      "legs": [
+        {
+          "id": "margin-open",
+          "position": "margin",
+          "commodity": "USD",
+          "amount": "200",
+          "role": "collateral",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "200",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "margin-equity",
+          "category": "opening-equity",
+          "commodity": "USD",
+          "amount": "-200",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-200",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "daily",
+      "date": "2026-01-03",
+      "operation": "reference_reset",
+      "evidence": "INVENTED final daily variation: F settles at 103; cash USD +30. Mark 103, index 102, last trade 104.",
+      "legs": [
+        {
+          "id": "variation-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "30",
+          "role": "variation_margin",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "30",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "variation-result",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-30",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-30",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "reference_changes": [
+          {
+            "reference_change_id": "@ref-daily",
+            "step_id": "@step:daily",
+            "position_id": "@future",
+            "lot_id": "@FL",
+            "change_kind": "reset",
+            "units": {
+              "n": "1"
+            },
+            "reference_before": {
+              "n": "100"
+            },
+            "reference_after": {
+              "n": "103"
+            },
+            "settlement_reference": {
+              "n": "103"
+            },
+            "reference_commodity_id": "@USD",
+            "terms_declaration_id": "@declaration:linear"
+          }
+        ],
+        "reference_settlements": [
+          {
+            "reference_change_id": "@ref-daily",
+            "settlement_posting_id": "@variation-cash",
+            "amount": {
+              "n": "30"
+            },
+            "commodity_id": "@USD"
+          }
+        ],
+        "prices": [
+          {
+            "price_id": "@mark",
+            "commodity_id": "@F",
+            "quote_commodity_id": "@USD",
+            "date": "2026-01-03",
+            "rate": {
+              "n": "103"
+            },
+            "basis": "mark",
+            "origin": "extracted",
+            "market": "Invented Exchange",
+            "timestamp_date": "2026-01-03",
+            "timestamp_local": "16:00",
+            "timestamp_offset_minutes": 0,
+            "timestamp_zone": "Etc/UTC",
+            "timestamp_precision": "minute"
+          },
+          {
+            "price_id": "@index",
+            "commodity_id": "@F",
+            "quote_commodity_id": "@USD",
+            "date": "2026-01-03",
+            "rate": {
+              "n": "102"
+            },
+            "basis": "index",
+            "origin": "extracted",
+            "market": "Invented Exchange",
+            "timestamp_date": "2026-01-03",
+            "timestamp_local": "16:00",
+            "timestamp_offset_minutes": 0,
+            "timestamp_zone": "Etc/UTC",
+            "timestamp_precision": "minute"
+          },
+          {
+            "price_id": "@trade",
+            "commodity_id": "@F",
+            "quote_commodity_id": "@USD",
+            "date": "2026-01-03",
+            "rate": {
+              "n": "104"
+            },
+            "basis": "trade",
+            "origin": "extracted",
+            "market": "Invented Exchange",
+            "timestamp_date": "2026-01-03",
+            "timestamp_local": "16:00",
+            "timestamp_offset_minutes": 0,
+            "timestamp_zone": "Etc/UTC",
+            "timestamp_precision": "minute"
+          }
+        ]
+      }
+    },
+    {
+      "id": "reference-close",
+      "date": "2026-01-04",
+      "operation": "reduction",
+      "evidence": "INVENTED close F at 105, after previous final reset 103: final cash settlement USD 20.",
+      "legs": [
+        {
+          "id": "future-close",
+          "position": "future",
+          "commodity": "F",
+          "amount": "-1",
+          "role": "principal"
+        },
+        {
+          "id": "closing-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "20",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "20",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "closing-result",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "-20",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "-20",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "future-reduce",
+          "kind": "reduction",
+          "method": "@declaration:reference-book",
+          "changes": [
+            {
+              "id": "future-exit",
+              "role": "source",
+              "posting": "future-close",
+              "position": "future",
+              "lot": "FL",
+              "units": "-1",
+              "principal": null,
+              "capitalized_fee": null,
+              "expensed_fee": null
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@future-disposal",
+            "allocation_id": "@future-reduce",
+            "proceeds_total": {
+              "n": "20"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:reference-fees"
+          }
+        ],
+        "reference_changes": [
+          {
+            "reference_change_id": "@ref-close",
+            "step_id": "@step:reference-close",
+            "position_id": "@future",
+            "lot_id": "@FL",
+            "change_kind": "close",
+            "units": {
+              "n": "1"
+            },
+            "reference_before": {
+              "n": "103"
+            },
+            "settlement_reference": {
+              "n": "105"
+            },
+            "reference_commodity_id": "@USD",
+            "terms_declaration_id": "@declaration:linear"
+          }
+        ],
+        "reference_settlements": [
+          {
+            "reference_change_id": "@ref-close",
+            "settlement_posting_id": "@closing-cash",
+            "amount": {
+              "n": "20"
+            },
+            "commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "withdraw",
+      "date": "2026-01-05",
+      "operation": "quantity",
+      "evidence": "INVENTED collateral release: USD 40 moved to free cash, not trading profit.",
+      "legs": [
+        {
+          "id": "margin-withdraw",
+          "position": "margin",
+          "commodity": "USD",
+          "amount": "-40",
+          "role": "collateral",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-40",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "free-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "40",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "40",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

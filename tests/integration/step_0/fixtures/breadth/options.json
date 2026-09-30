@@ -1,0 +1,787 @@
+{
+  "extends": "common.json",
+  "case_id": "breadth/options",
+  "commodities": [
+    {
+      "id": "CALL",
+      "kind": "contract",
+      "fields": {
+        "contract_multiplier": {
+          "n": "10"
+        },
+        "terms_declaration_id": "@declaration:call-terms"
+      }
+    },
+    {
+      "id": "PUT",
+      "kind": "contract",
+      "fields": {
+        "contract_multiplier": {
+          "n": "10"
+        },
+        "terms_declaration_id": "@declaration:put-terms"
+      }
+    },
+    {
+      "id": "EXPIRE",
+      "kind": "contract",
+      "fields": {
+        "contract_multiplier": {
+          "n": "10"
+        },
+        "terms_declaration_id": "@declaration:expire-terms"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "id": "call",
+      "account": "A",
+      "commodity": "CALL",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:option-book",
+      "terms": "@declaration:call-terms"
+    },
+    {
+      "id": "put",
+      "account": "A",
+      "commodity": "PUT",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:option-book",
+      "terms": "@declaration:put-terms"
+    },
+    {
+      "id": "expire",
+      "account": "A",
+      "commodity": "EXPIRE",
+      "kind": "contract",
+      "counterparty": "custodian",
+      "measurement": "cost",
+      "inventory": "individual",
+      "booking": "@declaration:option-book",
+      "terms": "@declaration:expire-terms"
+    }
+  ],
+  "policies": [
+    {
+      "id": "option-book",
+      "kind": "booking",
+      "payload": {
+        "position_ids": [
+          "@call",
+          "@put",
+          "@expire"
+        ],
+        "method": "STRICT",
+        "acquisition_date_role": "posted",
+        "tie_break": "origin_key",
+        "fee_attribution_declaration_id": "@declaration:fees",
+        "rounding": {
+          "scale": 2,
+          "mode": "half_even",
+          "residual": "final_slice"
+        }
+      }
+    },
+    {
+      "id": "call-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@CALL",
+        "payoff": {
+          "kind": "option",
+          "right": "call",
+          "underlying_id": "@Q",
+          "strike": {
+            "amount": {
+              "n": "5"
+            },
+            "commodity_id": "@USD"
+          },
+          "multiplier": {
+            "n": "10"
+          },
+          "exercise_style": "american",
+          "exercise_start": "2026-01-01",
+          "exercise_dates": []
+        },
+        "settlement": {
+          "mode": "mixed",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-02-01",
+        "deliverables": [
+          {
+            "deliverable_key": "cash-adjustment",
+            "commodity_id": "@USD",
+            "units_per_contract": {
+              "n": "1"
+            },
+            "role": "redemption",
+            "condition_key": null
+          },
+          {
+            "deliverable_key": "shares",
+            "commodity_id": "@Q",
+            "units_per_contract": {
+              "n": "10"
+            },
+            "role": "underlying",
+            "condition_key": null
+          },
+          {
+            "deliverable_key": "strike",
+            "commodity_id": "@USD",
+            "units_per_contract": {
+              "n": "-50"
+            },
+            "role": "strike_cash",
+            "condition_key": null
+          }
+        ],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:option-open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "put-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@PUT",
+        "payoff": {
+          "kind": "option",
+          "right": "put",
+          "underlying_id": "@Q",
+          "strike": {
+            "amount": {
+              "n": "5"
+            },
+            "commodity_id": "@USD"
+          },
+          "multiplier": {
+            "n": "10"
+          },
+          "exercise_style": "european",
+          "exercise_start": null,
+          "exercise_dates": []
+        },
+        "settlement": {
+          "mode": "physical",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-01-05",
+        "deliverables": [
+          {
+            "deliverable_key": "shares",
+            "commodity_id": "@Q",
+            "units_per_contract": {
+              "n": "-10"
+            },
+            "role": "underlying",
+            "condition_key": null
+          },
+          {
+            "deliverable_key": "strike",
+            "commodity_id": "@USD",
+            "units_per_contract": {
+              "n": "50"
+            },
+            "role": "strike_cash",
+            "condition_key": null
+          }
+        ],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:option-open"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expire-terms",
+      "kind": "contract_terms",
+      "payload": {
+        "commodity_id": "@EXPIRE",
+        "payoff": {
+          "kind": "option",
+          "right": "call",
+          "underlying_id": "@Q",
+          "strike": {
+            "amount": {
+              "n": "20"
+            },
+            "commodity_id": "@USD"
+          },
+          "multiplier": {
+            "n": "10"
+          },
+          "exercise_style": "european",
+          "exercise_start": null,
+          "exercise_dates": []
+        },
+        "settlement": {
+          "mode": "cash",
+          "variation": "none",
+          "reference_reset": "none",
+          "rounding": {
+            "scale": 2,
+            "mode": "half_even",
+            "residual": "final_slice"
+          }
+        },
+        "collateral": {
+          "mode": "none"
+        },
+        "expiry": "2026-01-03",
+        "deliverables": [],
+        "evidence": [
+          {
+            "kind": "source_record",
+            "id": "@source:option-open"
+          }
+        ]
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Three independent option roots: long adjusted call costs 2, short put receives 3, and expiring call costs 4. Net opening cash is -3.",
+    "Expiry consumes one option and basis 4 with no cash; positive economic loss weight 4 balances it.",
+    "Adjusted call exercise receives 10 shares plus USD 1 and pays USD 50. Explicit capitalized premium policy gives share basis 2+50-1=51.",
+    "Short-put assignment consumes negative premium basis -3, pays 50 and receives 10 shares with basis 47. Final shares 20, basis 98, cash -102, economic loss 4."
+  ],
+  "expected_answers": {
+    "quantities": {
+      "call": "0",
+      "put": "0",
+      "expire": "0",
+      "AQ": "20",
+      "cash-A": "-102"
+    },
+    "inventory": {
+      "AQ": {
+        "units": "20",
+        "principal": "98",
+        "capitalized_fee": "0",
+        "expensed_fee": "0"
+      }
+    },
+    "category_amounts": {
+      "result": "4"
+    },
+    "coverage": [
+      "option_expiry",
+      "short_put_assignment",
+      "long_call_exercise",
+      "adjusted_deliverables",
+      "premium_components"
+    ]
+  },
+  "events": [
+    {
+      "id": "option-open",
+      "date": "2026-01-02",
+      "operation": "acquisition",
+      "evidence": "INVENTED broker confirms long adjusted CALL 1 premium 2 USD, short PUT -1 premium received 3 USD, long EXPIRE 1 premium 4 USD; adjusted CALL delivers 10 Q plus 1 USD against strike cash 50.",
+      "legs": [
+        {
+          "id": "call-open",
+          "position": "call",
+          "commodity": "CALL",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "2",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "put-open",
+          "position": "put",
+          "commodity": "PUT",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-3",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "expire-open",
+          "position": "expire",
+          "commodity": "EXPIRE",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "4",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "option-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-3",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-3",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "call-acq",
+          "kind": "acquisition",
+          "method": "@declaration:option-book",
+          "changes": [
+            {
+              "id": "call-entry",
+              "role": "target",
+              "posting": "call-open",
+              "position": "call",
+              "lot": "CL",
+              "units": "1",
+              "principal": "2",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "put-acq",
+          "kind": "acquisition",
+          "method": "@declaration:option-book",
+          "changes": [
+            {
+              "id": "put-entry",
+              "role": "target",
+              "posting": "put-open",
+              "position": "put",
+              "lot": "PL",
+              "units": "-1",
+              "principal": "-3",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        },
+        {
+          "id": "expiry-acq",
+          "kind": "acquisition",
+          "method": "@declaration:option-book",
+          "changes": [
+            {
+              "id": "expire-entry",
+              "role": "target",
+              "posting": "expire-open",
+              "position": "expire",
+              "lot": "EL",
+              "units": "1",
+              "principal": "4",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@CL",
+            "commodity_id": "@CALL",
+            "creation_step_id": "@step:option-open",
+            "origin_posting_id": "@call-open",
+            "origin_key": "call-premium",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          },
+          {
+            "lot_id": "@PL",
+            "commodity_id": "@PUT",
+            "creation_step_id": "@step:option-open",
+            "origin_posting_id": "@put-open",
+            "origin_key": "put-premium",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          },
+          {
+            "lot_id": "@EL",
+            "commodity_id": "@EXPIRE",
+            "creation_step_id": "@step:option-open",
+            "origin_posting_id": "@expire-open",
+            "origin_key": "expiry-premium",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "expiry",
+      "date": "2026-01-03",
+      "operation": "reduction",
+      "evidence": "INVENTED exchange expiry confirmation: EXPIRE lapses worthless, no cash proceeds and no fees.",
+      "legs": [
+        {
+          "id": "expire-close",
+          "position": "expire",
+          "commodity": "EXPIRE",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-4",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "expiry-loss",
+          "category": "result",
+          "commodity": "USD",
+          "amount": "4",
+          "role": "book_result",
+          "weights": [
+            {
+              "kind": "book_result",
+              "amount": "4",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "expiry-reduce",
+          "kind": "reduction",
+          "method": "@declaration:option-book",
+          "changes": [
+            {
+              "id": "expire-exit",
+              "role": "source",
+              "posting": "expire-close",
+              "position": "expire",
+              "lot": "EL",
+              "units": "-1",
+              "principal": "-4",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "disposals": [
+          {
+            "disposal_id": "@expiry-disposal",
+            "allocation_id": "@expiry-reduce",
+            "proceeds_total": {
+              "n": "0"
+            },
+            "proceeds_commodity_id": "@USD",
+            "disposal_fees_total": {
+              "n": "0"
+            },
+            "fee_attribution_declaration_id": "@declaration:fees"
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise",
+      "date": "2026-01-04",
+      "operation": "quantity",
+      "evidence": "INVENTED exercise notice: adjusted CALL 1 surrendered; Q 10 received, USD strike 50 paid and adjusted cash deliverable USD 1 received. Book declaration capitalizes premium 2 into share principal.",
+      "legs": [
+        {
+          "id": "call-close",
+          "position": "call",
+          "commodity": "CALL",
+          "amount": "-1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-2",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "call-shares",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "51",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "call-strike",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-50",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-50",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "call-adjustment",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "1",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "1",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "exercise-allocation",
+          "kind": "transformation",
+          "method": "@declaration:option-book",
+          "changes": [
+            {
+              "id": "call-exit",
+              "role": "source",
+              "posting": "call-close",
+              "position": "call",
+              "lot": "CL",
+              "units": "-1",
+              "principal": "-2",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "call-stock-entry",
+              "role": "target",
+              "posting": "call-shares",
+              "position": "AQ",
+              "lot": "CQL",
+              "units": "10",
+              "principal": "51",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@CQL",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:exercise",
+            "parent_lot_id": "@CL",
+            "origin_key": "adjusted-deliverable",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    },
+    {
+      "id": "assignment",
+      "date": "2026-01-05",
+      "operation": "quantity",
+      "evidence": "INVENTED short PUT assignment: negative option quantity -1 closed by +1, Q 10 received against USD 50 strike. Recorded share principal 47 retains premium received 3.",
+      "legs": [
+        {
+          "id": "put-close",
+          "position": "put",
+          "commodity": "PUT",
+          "amount": "1",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "3",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "put-shares",
+          "position": "AQ",
+          "commodity": "Q",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "47",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "put-strike",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-50",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-50",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "allocations": [
+        {
+          "id": "assignment-allocation",
+          "kind": "transformation",
+          "method": "@declaration:option-book",
+          "changes": [
+            {
+              "id": "put-exit",
+              "role": "source",
+              "posting": "put-close",
+              "position": "put",
+              "lot": "PL",
+              "units": "1",
+              "principal": "3",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            },
+            {
+              "id": "put-stock-entry",
+              "role": "target",
+              "posting": "put-shares",
+              "position": "AQ",
+              "lot": "PQL",
+              "units": "10",
+              "principal": "47",
+              "capitalized_fee": "0",
+              "expensed_fee": "0"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "lots": [
+          {
+            "lot_id": "@PQL",
+            "commodity_id": "@Q",
+            "creation_step_id": "@step:assignment",
+            "parent_lot_id": "@PL",
+            "origin_key": "assigned-deliverable",
+            "acquisition_date": "2026-01-02",
+            "book_commodity_id": "@USD"
+          }
+        ]
+      }
+    }
+  ],
+  "rows": {
+    "links": [
+      {
+        "link_id": "@call-life",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@option-open",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@call-life",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@exercise",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@put-life",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@option-open",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@put-life",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@assignment",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@expire-life",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@option-open",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      },
+      {
+        "link_id": "@expire-life",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@expiry",
+        "link_kind": "lifecycle",
+        "origin": "derived"
+      }
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "extends": "cash.json",
+  "case_id": "correction-history",
+  "policies": [
+    {
+      "id": "correct-credit",
+      "kind": "correction",
+      "payload": {
+        "operation": "assign",
+        "target": {"table": "postings", "key": ["@credit-cash"]},
+        "prior_declaration_id": null,
+        "reason": "Invented statement correction: credit is 25 rather than 20.",
+        "journal_sequence": 0,
+        "guards": [
+          {
+            "target": {"table": "postings", "key": ["@credit-cash"]},
+            "fields": ["commodity_id", "posting_id", "txn_id"],
+            "expected_digest": "594684195829fc6cf60ae3e8ee4966da19ec989e24396b360f99e1ce26ffa330"
+          }
+        ],
+        "assignments": [{"field": "postings.amount", "value": {"n": "25"}}],
+        "selection": []
+      }
+    },
+    {
+      "id": "replace-credit",
+      "kind": "correction",
+      "payload": {
+        "operation": "supersede",
+        "target": {"table": "postings", "key": ["@credit-cash"]},
+        "prior_declaration_id": "@declaration:correct-credit",
+        "reason": "Reviewed complete replacement: actual credit is 22.",
+        "journal_sequence": 1,
+        "guards": [
+          {
+            "target": {"table": "postings", "key": ["@credit-cash"]},
+            "fields": ["commodity_id", "posting_id", "txn_id"],
+            "expected_digest": "594684195829fc6cf60ae3e8ee4966da19ec989e24396b360f99e1ce26ffa330"
+          }
+        ],
+        "assignments": [{"field": "postings.amount", "value": {"n": "22"}}],
+        "selection": []
+      }
+    },
+    {
+      "id": "retract-credit",
+      "kind": "correction",
+      "payload": {
+        "operation": "retract",
+        "target": null,
+        "prior_declaration_id": "@declaration:replace-credit",
+        "reason": "Reviewed reversal restores the original 20 credit.",
+        "journal_sequence": 2,
+        "guards": [],
+        "assignments": [],
+        "selection": []
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Retained correction journal has immutable assign 25, complete supersession 22, and retraction to original 20; only one revision is active at each reviewed stage.",
+    "Opening 100, credit 25/22/20, debit 5 gives staged cash 120/117/115. Original event/leg identities remain unchanged."
+  ],
+  "expected_answers": {
+    "correction_cash": ["120", "117", "115"]
+  }
+}

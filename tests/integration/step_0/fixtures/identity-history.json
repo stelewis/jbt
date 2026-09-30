@@ -1,0 +1,73 @@
+{
+  "extends": "common.json",
+  "case_id": "identity-history",
+  "policies": [
+    {
+      "id": "merge-reviewed",
+      "kind": "identity",
+      "payload": {
+        "record_kind": "transaction",
+        "event_key": "canonical",
+        "anchor": {"kind": "source_record", "id": "@source:canonical"},
+        "members": [
+          {"source_record_id": "@source:canonical", "event_key": "canonical"},
+          {"source_record_id": "@source:old-m", "event_key": "old-m"}
+        ],
+        "authored_keys": [],
+        "retired_ids": ["@old-m"],
+        "successor_ids": ["@canonical"],
+        "guards": [],
+        "reason": "Reviewed merger retires independent old-m into canonical; history remains addressable."
+      }
+    },
+    {
+      "id": "split-reviewed",
+      "kind": "identity",
+      "payload": {
+        "record_kind": "transaction",
+        "event_key": "split-new",
+        "anchor": {"kind": "source_record", "id": "@source:split-new"},
+        "members": [
+          {"source_record_id": "@source:old-m", "event_key": "old-m"},
+          {"source_record_id": "@source:split-new", "event_key": "split-new"}
+        ],
+        "authored_keys": [],
+        "retired_ids": [],
+        "successor_ids": ["@split-new"],
+        "guards": [],
+        "reason": "Reviewed split moves old-m membership to new surviving canonical source, never resurrecting its retired ID."
+      }
+    }
+  ],
+  "oracle_notes": [
+    "Three invented occurrences have no financial postings. Merger retires old-m into canonical; reviewed split reassigns old-m to split-new without reusing its retired event ID.",
+    "Retained source records, retired economic identity and both immutable reviewed decisions remain available for audit."
+  ],
+  "expected_answers": {"original_identities": 3, "retired_identities": 1, "split_survivors": 2},
+  "events": [
+    {
+      "id": "old-m",
+      "date": "2026-01-03",
+      "operation": "boundary",
+      "state": "retracted",
+      "identity_state": "retired",
+      "identity_decision": "@declaration:merge-reviewed",
+      "evidence": "INVENTED historical duplicate old-m; separately anchored before reviewed merger.",
+      "legs": []
+    },
+    {
+      "id": "canonical",
+      "date": "2026-01-03",
+      "operation": "boundary",
+      "evidence": "INVENTED surviving canonical component with zero economic postings.",
+      "legs": []
+    },
+    {
+      "id": "split-new",
+      "date": "2026-01-03",
+      "operation": "boundary",
+      "evidence": "INVENTED separately reviewed split survivor with zero economic postings.",
+      "legs": []
+    }
+  ]
+}

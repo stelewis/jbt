@@ -1,0 +1,191 @@
+{
+  "extends": "common.json",
+  "case_id": "obligations",
+  "positions": [
+    {
+      "id": "replacement-debt",
+      "account": "A",
+      "commodity": "USD",
+      "kind": "claim",
+      "counterparty": "custodian",
+      "measurement": "quantity",
+      "inventory": "quantity"
+    }
+  ],
+  "oracle_notes": [
+    "Opening mortgage obligation USD -100. Source-stated payment 12 comprises principal 10 and interest 2; debt becomes -90, cash -12; expense is 2, not 12.",
+    "Remortgage replaces remaining -90 old obligation with new -90 against a different counterparty. No net borrowing or expense is fabricated.",
+    "An unallocated payment has a retained observed gross amount, but principal/interest-dependent determinations are not evaluable without evidence; no amortization schedule is inferred."
+  ],
+  "expected_answers": {
+    "positions": {
+      "debt": "0",
+      "replacement-debt": "-90",
+      "cash-A": "-12"
+    },
+    "interest_expense": "2",
+    "principal_repaid": "10",
+    "gross_payment": "12",
+    "new_borrowing_net": "0",
+    "missing_allocation": null
+  },
+  "negative_cases": [
+    {
+      "id": "gross-payment-as-interest",
+      "mutation": "gross_as_interest",
+      "owner": "cash-flow-policy",
+      "expected": "principal-not-expense"
+    },
+    {
+      "id": "collapse-counterparties",
+      "mutation": "same_relationship",
+      "owner": "position-identity",
+      "expected": "distinct-counterparties"
+    }
+  ],
+  "events": [
+    {
+      "id": "mortgage-opening",
+      "date": "2026-01-01",
+      "operation": "opening",
+      "kind": "opening",
+      "evidence": "INVENTED loan adoption certificate: old mortgage principal owed USD 100, payable to distinct lender; original start date unknown.",
+      "legs": [
+        {
+          "id": "mortgage-debt",
+          "position": "debt",
+          "commodity": "USD",
+          "amount": "-100",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-100",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "mortgage-equity",
+          "category": "opening-equity",
+          "commodity": "USD",
+          "amount": "100",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "100",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mortgage-payment",
+      "date": "2026-01-31",
+      "operation": "quantity",
+      "evidence": "INVENTED lender statement: total payment USD 12; principal reduction USD 10, interest USD 2; no modeled schedule.",
+      "legs": [
+        {
+          "id": "mortgage-cash",
+          "position": "cash-A",
+          "commodity": "USD",
+          "amount": "-12",
+          "role": "cash",
+          "weights": [
+            {
+              "kind": "consideration",
+              "amount": "-12",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "mortgage-principal",
+          "position": "debt",
+          "commodity": "USD",
+          "amount": "10",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "10",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "mortgage-interest",
+          "category": "expense",
+          "commodity": "USD",
+          "amount": "2",
+          "role": "accrued_interest",
+          "weights": [
+            {
+              "kind": "expense",
+              "amount": "2",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remortgage",
+      "date": "2026-02-10",
+      "operation": "quantity",
+      "evidence": "INVENTED refinance completion: old lender paid USD 90 by new lender; old debt extinguished; distinct new obligation USD 90.",
+      "legs": [
+        {
+          "id": "old-extinguished",
+          "position": "debt",
+          "commodity": "USD",
+          "amount": "90",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "90",
+              "commodity": "USD"
+            }
+          ]
+        },
+        {
+          "id": "new-created",
+          "position": "replacement-debt",
+          "commodity": "USD",
+          "amount": "-90",
+          "role": "principal",
+          "weights": [
+            {
+              "kind": "principal",
+              "amount": "-90",
+              "commodity": "USD"
+            }
+          ]
+        }
+      ],
+      "rows": {
+        "links": [
+          {
+            "link_id": "@remortgage-link",
+            "member_role": "outgoing",
+            "member_kind": "posting",
+            "member_id": "@new-created",
+            "link_kind": "transfer",
+            "origin": "derived"
+          },
+          {
+            "link_id": "@remortgage-link",
+            "member_role": "incoming",
+            "member_kind": "posting",
+            "member_id": "@old-extinguished",
+            "link_kind": "transfer",
+            "origin": "derived"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "extends": "cash.json",
+  "case_id": "source-sequence",
+  "replacements": [
+    {"path": ["events", 1, "evidence"], "value": "INVENTED source scope synthetic-fixture, sequence domain statement-events, ordinal 10: deposit C1 external credit USD 20.00 posted 2026-01-12."},
+    {"path": ["events", 2, "date"], "value": "2026-01-12"},
+    {"path": ["events", 2, "evidence"], "value": "INVENTED source scope synthetic-fixture, sequence domain statement-events, ordinal 11: purchase D1 USD 5.00 debit posted 2026-01-12."}
+  ],
+  "oracle_notes": [
+    "Two same-day independent cash movements retain source-stated ordinals 10 and 11 in the same source scope and sequence domain. The source_sequence edge records their comparable order; changing either domain makes that edge invalid."
+  ],
+  "rows": {
+    "book_step_dependencies": [
+      {
+        "before_step_id": "@step:credit",
+        "after_step_id": "@step:debit",
+        "constraint_kind": "source_sequence",
+        "declaration_id": null
+      }
+    ],
+    "observations": [
+      {
+        "observation_id": "@credit-sequence",
+        "record_kind": "transactions",
+        "record_id": ["@credit"],
+        "field_name": "source.sequence",
+        "observation_kind": "source_field",
+        "value_type": "decimal",
+        "decimal_value": {"n": "10"},
+        "source_record_id": "@source:credit"
+      },
+      {
+        "observation_id": "@credit-domain",
+        "record_kind": "transactions",
+        "record_id": ["@credit"],
+        "field_name": "source.sequence_domain",
+        "observation_kind": "source_field",
+        "value_type": "text",
+        "text_value": "statement-events",
+        "source_record_id": "@source:credit"
+      },
+      {
+        "observation_id": "@debit-sequence",
+        "record_kind": "transactions",
+        "record_id": ["@debit"],
+        "field_name": "source.sequence",
+        "observation_kind": "source_field",
+        "value_type": "decimal",
+        "decimal_value": {"n": "11"},
+        "source_record_id": "@source:debit"
+      },
+      {
+        "observation_id": "@debit-domain",
+        "record_kind": "transactions",
+        "record_id": ["@debit"],
+        "field_name": "source.sequence_domain",
+        "observation_kind": "source_field",
+        "value_type": "text",
+        "text_value": "statement-events",
+        "source_record_id": "@source:debit"
+      }
+    ]
+  }
+}
