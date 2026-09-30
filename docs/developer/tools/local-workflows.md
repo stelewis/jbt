@@ -18,6 +18,20 @@ Use `uv sync --locked` to create or update the project environment from the comm
 
 Use these commands during normal development before running the full quality gate.
 
+## Contract conformance
+
+Run the pure foundations, schema validators, artifact boundaries, and independent consumer together:
+
+```bash
+uv run --locked pytest -q tests/jbt/domain tests/jbt/contracts tests/jbt/artifacts tests/integration/step_0
+```
+
+These tests also run in the ordinary pytest suite; they are not behind the default-excluded `e2e` marker. The [implemented architecture](../architecture.md) explains what their evidence does and does not establish. Keep synthetic financial expectations independent of the algorithms being tested. The coverage gate requires zero unproven indexed obligations and a nonempty specimen for every table; every indexed case is published and independently verified rather than sampling only cash examples.
+
+The [contract dependencies](./contract-dependencies.md) include native libraries for real Parquet, SQL/UDF, and Beancount checks. Dependency provisioning and advisory checks may access the network; the financial tests must not fetch files, install extensions, or contact services.
+
+The ordinary CI test job allows ten minutes for these real boundary checks. The package job builds both distributions, compares their schema resources, and exercises the Parquet writer imported directly from the built wheel in isolated Python; editable-checkout imports are not packaging evidence.
+
 ## Full quality gate
 
 - `uv run --locked ruff format && uv run --locked ruff check --fix && uv check --locked && uv run --locked tq check && uv run --locked pytest -q`

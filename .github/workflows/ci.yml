@@ -103,7 +103,7 @@ jobs:
   tests:
     name: Tests (pytest)
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -134,6 +134,42 @@ jobs:
 
       - name: Build distributions
         run: uv build --no-sources
+
+      - name: Exercise packaged contract resources and writer
+        run: |
+          uv run --locked python -I - <<'PY'
+          import sys
+          import tarfile
+          import tempfile
+          import zipfile
+          from pathlib import Path
+
+          wheel, = Path("dist").glob("*.whl")
+          sdist, = Path("dist").glob("*.tar.gz")
+          sys.path.insert(0, str(wheel.resolve()))
+          from jbt.artifacts.parquet import Compression, WriterSettings, write_table
+          from jbt.contracts import catalog
+
+          assert str(wheel.resolve()) in catalog.__file__
+          with zipfile.ZipFile(wheel) as archive, tarfile.open(sdist) as source:
+              for name in ("catalog.json", "catalog.schema.json", "checks.json"):
+                  member, = (
+                      item for item in source.getmembers()
+                      if item.name.endswith(f"/src/jbt/contracts/resources/{name}")
+                  )
+                  stream = source.extractfile(member)
+                  assert stream is not None
+                  assert stream.read() == archive.read(f"jbt/contracts/resources/{name}")
+          settings = WriterSettings(
+              compression=Compression.ZSTD, row_group_size=100,
+              dictionary=False, statistics=True,
+          )
+          with tempfile.TemporaryDirectory() as directory:
+              for table in catalog.catalog():
+                  path = Path(directory) / f"{table.name}.parquet"
+                  write_table(path, table, [], settings)
+                  assert path.read_bytes()[:4] == b"PAR1"
+          PY
 
   integration-tests:
     name: Integration tests (pytest)
