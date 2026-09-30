@@ -1,6 +1,6 @@
 # Schema Handoff Exercises
 
-These synthetic exercises test whether an independent implementer can carry the [acceptance histories](./acceptance.md) through the [tables](./analysis-boundary.md) and [declaration payloads](./declarations.md). They fix expected rows, equations, and failures, not a processor implementation. Delivery step 0 turns them into machine-schema fixtures and an independent reader before schema freeze.
+These synthetic exercises test whether an independent implementer can carry the [acceptance histories](./acceptance.md) through the [tables](./analysis-boundary.md) and [declaration payloads](./declarations.md). They fix expected rows, equations, and failures, not a processor implementation. Delivery step 0 turns them into machine-schema fixtures and an independent reader before processors depend on the baseline.
 
 IDs below are readable aliases for generated IDs, all within entity `E`; a fixture must substitute the canonical IDs and exact revision digests. Table projections omit only unrelated descriptive/date/provenance columns, which the fixture must populate from its synthetic evidence. They do not define relaxed table schemas. Decimal notation in tables expands to normalized `N` with null source scale unless precision is explicitly stated. Every example uses recognized events unless specified otherwise; null and zero are never interchangeable.
 

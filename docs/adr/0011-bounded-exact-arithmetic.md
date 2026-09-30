@@ -47,4 +47,4 @@ Rejected: approximate storage loses evidence and breaks exact conservation, rega
 ## Related
 
 - [Authoritative inventory allocations](0010-authoritative-inventory-allocations.md)
-- [Schema feasibility gate](../plans/delivery.md#0c-exercise-the-real-numeric-and-artifact-boundary)
+- [Contract conformance](../developer/tools/local-workflows.md#contract-conformance)

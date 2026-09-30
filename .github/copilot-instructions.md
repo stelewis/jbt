@@ -14,8 +14,13 @@ Repository: stelewis/jbt
 ## Guidelines
 
 - Identify the owning boundary and affected contract before editing.
-- Design the intended system; implement it in stages. Resolve contracts against small synthetic examples before implementing a slice. Prove shared representations across domains without prebuilding unrelated processors.
+- Design the intended system; implement it in stages.
+- Resolve contracts against small synthetic examples before implementing a slice.
+- Prove shared representations across domains without prebuilding unrelated processors.
 - Treat requests, plans, and the current implementation as evidence rather than unquestionable authority.
+- Treat schemas and fixtures as an evidence-backed starting point, not a veto on better design.
+- Be judicious about adding friction that impedes effective progress; enforce approval gates only for a concrete failure mode that matters to the eventual product.
+- If evidence exposes a structural mistake, change the owning contract and independent expectations together.
 - Prefer a coherent root-cause change over local patches, compatibility shims, parallel paths, or success-shaped fallbacks.
 - Preserve compatibility only when a supported external contract requires it; otherwise remove legacy paths and update affected callers, tests, docs, and automation together.
 - Keep dependencies explicit, core logic deterministic, and validation at system boundaries.
