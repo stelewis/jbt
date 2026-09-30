@@ -30,11 +30,14 @@ Simple splits preserve the position's origin and acquisition date while transfor
 | Spinoff or stock distribution | Preserve parent/child lineage and distinct instrument identities; require an evidenced or declared allocation where economic cost must be divided |
 | Merger or exchange | Map each predecessor to successor consideration, with stock, cash, extinguished rights, and realized components separately identified |
 | Return of capital or basis adjustment | Record the stated amount and applicable economic treatment without inventing units or assuming every payment reduces basis |
+| Currency redenomination | Record the stated conversion between distinct currency identities; do not collapse it into a display alias or invent a gain |
 | Symbol change | Update dated symbols for the same instrument; do not transform lots |
 
 A four-for-one split of 10 shares with total cost 1,000 produces 40 shares with the same origin and total cost, or 25 per share. It does not rewrite the original acquisition as 40 shares. For a spinoff with a reviewed 80:20 allocation, that 1,000 becomes 800 on the parent branch and 200 on the child; the distribution ratio alone does not supply 80:20. A cash-and-stock exchange need not conserve basis by subtracting all cash: its consideration and allocation rule determine the outcome.
 
 Original acquisition dates remain lineage facts. Whether a successor inherits a holding period for a particular tax purpose is analysis, not a claim that every merger preserves legal tax treatment. A quantity-only split preserves full lot identity; a branch-changing action can require selection review under [ADR 0004](0004-lot-selection-rebinding.md).
+
+Basis applications identify exact inventory changes. A spinoff allocation can contain a source reduction, a retained-parent augmentation, and a new-child augmentation; pointing a basis term only at that allocation does not identify its beneficiary. Each declared basis amount is checked against its targeted change and book currency. This also distinguishes return-of-capital principal adjustments from unit transformations and disposals.
 
 ### Reconcile action movements
 
@@ -71,6 +74,10 @@ Rejected: the source did not report today's changed quantity decades earlier, an
 ### Conserve basis with one formula for every action
 
 Rejected: splits, distributions, returns of capital, and taxable or mixed consideration exchanges have different economic components. A balancing number is not evidence of their treatment.
+
+### Infer a basis term's output from the transformation
+
+Rejected: several outputs can share a commodity or amount. An explicit inventory-change reference retains the reviewed selection without asking consumers to infer the intended branch from labels, totals, or ordering.
 
 ## Related
 
