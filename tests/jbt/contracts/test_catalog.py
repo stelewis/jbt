@@ -1,4 +1,4 @@
-from jbt.contracts.catalog import catalog, schema_document
+from jbt.contracts.catalog import catalog, tabular_schema
 
 
 def test_catalog_has_every_required_table_with_entity_keys() -> None:
@@ -66,7 +66,7 @@ def test_decimal_expansion_and_physical_types() -> None:
 def test_redenomination_is_a_distinct_corporate_action_kind() -> None:
     action = next(
         table
-        for table in schema_document()["tables"]
+        for table in tabular_schema()["tables"]
         if table["name"] == "corporate_actions"
     )
     kind = next(
@@ -79,7 +79,7 @@ def test_redenomination_is_a_distinct_corporate_action_kind() -> None:
 def test_action_application_registry_names_exact_basis_dependencies() -> None:
     check = next(
         entry
-        for entry in schema_document()["semantic_checks"]
+        for entry in tabular_schema()["semantic_checks"]
         if entry["name"] == "action_application_identity"
     )
     assert {"action_applications", "corporate_action_effects", "inventory_changes"} <= (
@@ -87,7 +87,7 @@ def test_action_application_registry_names_exact_basis_dependencies() -> None:
     )
     precedence = next(
         entry
-        for entry in schema_document()["semantic_checks"]
+        for entry in tabular_schema()["semantic_checks"]
         if entry["name"] == "economic_precedence_graph"
     )
     assert {"book_step_dependencies", "observations", "source_records"} <= set(
@@ -98,7 +98,7 @@ def test_action_application_registry_names_exact_basis_dependencies() -> None:
 def test_catalog_metadata_includes_relationships_and_is_not_shared_mutable_state() -> (
     None
 ):
-    document = schema_document()
+    document = tabular_schema()
     position = next(
         table for table in document["tables"] if table["name"] == "positions"
     )
@@ -109,11 +109,11 @@ def test_catalog_metadata_includes_relationships_and_is_not_shared_mutable_state
     } in position["foreign_keys"]
     assert document["numeric_limits"]["coefficient_digits"] == 96
     document["tables"].clear()
-    assert len(schema_document()["tables"]) == 38
+    assert len(tabular_schema()["tables"]) == 38
 
 
 def test_external_identifiers_are_not_internal_foreign_keys() -> None:
-    tables = {table["name"]: table for table in schema_document()["tables"]}
+    tables = {table["name"]: table for table in tabular_schema()["tables"]}
     for table, field in (
         ("source_records", "source_scope_id"),
         ("commodity_symbols", "source_scope_id"),
@@ -132,7 +132,7 @@ def test_external_identifiers_are_not_internal_foreign_keys() -> None:
 
 
 def test_declared_references_resolve_to_complete_target_keys() -> None:
-    tables = {table["name"]: table for table in schema_document()["tables"]}
+    tables = {table["name"]: table for table in tabular_schema()["tables"]}
     for table in tables.values():
         fields = {column["name"] for column in table["columns"]}
         for reference in table["foreign_keys"]:

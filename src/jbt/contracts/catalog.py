@@ -27,8 +27,8 @@ class Table:
     sort_key: tuple[str, ...]
 
 
-def schema_document() -> dict:
-    """Return a fresh JSON-safe expanded catalog, including semantic metadata."""
+def tabular_schema() -> dict:
+    """Return the expanded schema of the published tabular snapshot."""
     raw = json.loads(
         files("jbt.contracts").joinpath("resources/catalog.json").read_text()
     )
@@ -113,5 +113,5 @@ def catalog() -> tuple[Table, ...]:
             tuple(spec["primary_key"]),
             tuple(spec["sort_key"]),
         )
-        for spec in schema_document()["tables"]
+        for spec in tabular_schema()["tables"]
     )

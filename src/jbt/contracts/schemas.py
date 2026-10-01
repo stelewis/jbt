@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 if TYPE_CHECKING:
     from jsonschema.protocols import Validator
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.primitives import validate_json_values
 
 
@@ -56,7 +56,7 @@ def _shape(expression: str) -> dict:
 
 
 def _table_fields(name: str, *, exclude: tuple[str, ...] = ()) -> dict:
-    table = next(t for t in schema_document()["tables"] if t["name"] == name)
+    table = next(t for t in tabular_schema()["tables"] if t["name"] == name)
     kinds = {
         "string": "S",
         "integer": "I",
@@ -117,7 +117,7 @@ def _common_definitions() -> dict:
             }
         ),
     }
-    tables = schema_document()["tables"]
+    tables = tabular_schema()["tables"]
     ref_variants = []
     for table in tables:
         columns = {c["name"]: c for c in table["columns"]}
@@ -264,7 +264,7 @@ def _declaration_definitions() -> dict:
             "link_kind": {
                 "enum": next(
                     c["enum"]
-                    for t in schema_document()["tables"]
+                    for t in tabular_schema()["tables"]
                     if t["name"] == "links"
                     for c in t["columns"]
                     if c["name"] == "link_kind"
@@ -529,7 +529,7 @@ def declaration_schema() -> dict:
     defs = {**_common_definitions(), **_declaration_definitions()}
     kinds = next(
         c["enum"]
-        for t in schema_document()["tables"]
+        for t in tabular_schema()["tables"]
         if t["name"] == "declarations"
         for c in t["columns"]
         if c["name"] == "declaration_kind"

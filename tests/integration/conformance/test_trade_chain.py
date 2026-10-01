@@ -6,7 +6,7 @@ import pytest
 from tests.integration.conformance.corpus import load_case
 from tests.integration.conformance.reader import replay_rows, validate_rows
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.primitives import ContractError
 from jbt.contracts.validation import validate_tables
 
@@ -23,7 +23,7 @@ def _proceeds(row: dict[str, object]) -> Fraction:
 def test_n_ary_chain_retains_both_rolls_and_their_closed_lots() -> None:
     case = load_case("trade-chain")
     validate_tables(case.tables)
-    validate_rows(case.tables, schema_document())
+    validate_rows(case.tables, tabular_schema())
     entity = case.tables["build"][0]["entity_id"]
     assert isinstance(entity, str)
     replay = replay_rows(case.tables, entity=entity)

@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from jbt.contracts.catalog import catalog, schema_document
+from jbt.contracts.catalog import catalog, tabular_schema
 from jbt.contracts.publication import (
     _active_refs,
     validate_configuration,
@@ -45,9 +45,9 @@ def empty_manifest() -> tuple[dict, dict]:
         ],
         "schemas": [
             {
-                "schema_id": "tables",
+                "schema_id": "tabular_schema",
                 "schema_version": 1,
-                "path": "schema.json",
+                "path": "tabular_schema.json",
                 "byte_digest": "5" * 64,
             }
         ],
@@ -205,7 +205,7 @@ def test_active_guard_matches_domain_projection_bytes_and_detects_drift(
         ),
     }
     columns = next(
-        spec for spec in schema_document()["tables"] if spec["name"] == "accounts"
+        spec for spec in tabular_schema()["tables"] if spec["name"] == "accounts"
     )["columns"]
     assert any(column.get("enum") for column in columns)
     _active_refs(guard, "e", tables)

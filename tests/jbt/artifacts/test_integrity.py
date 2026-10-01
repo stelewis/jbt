@@ -46,7 +46,7 @@ def test_invalid_json_document(payload: bytes) -> None:
 def test_json_preserves_types_without_coercion() -> None:
     assert decode_document(
         b'{"integer":1,"boolean":true,"coefficient":"100","missing":null}',
-        "schema.json",
+        "tabular_schema.json",
     ) == {"integer": 1, "boolean": True, "coefficient": "100", "missing": None}
 
 

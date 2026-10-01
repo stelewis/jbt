@@ -15,7 +15,7 @@ from jbt.artifacts.integrity import (
     require_filename,
 )
 from jbt.artifacts.parquet import WriterSettings, write_table
-from jbt.contracts.catalog import catalog, schema_document
+from jbt.contracts.catalog import catalog, tabular_schema
 from jbt.contracts.primitives import ContractError
 from jbt.contracts.publication import (
     validate_configuration,
@@ -122,7 +122,7 @@ def _writer_document(settings: WriterSettings) -> dict[str, object]:
 
 def _schema_resources() -> dict[str, dict]:
     return {
-        "schema": schema_document(),
+        "tabular_schema": tabular_schema(),
         "declaration_schema": declaration_schema(),
         "manifest_schema": manifest_schema(),
         "descriptor_schema": descriptor_schema(),
@@ -289,7 +289,7 @@ def _write_tables(
     settings: WriterSettings,
 ) -> list[TableArtifact]:
     entries: list[TableArtifact] = []
-    definitions = {table["name"]: table for table in schema_document()["tables"]}
+    definitions = {table["name"]: table for table in tabular_schema()["tables"]}
     for table in catalog():
         if table.name == "build":
             continue
@@ -331,8 +331,8 @@ def assemble_snapshot(
         raise ValueError(msg)
     schemas = _schema_resources()
     payloads, schema_entries = _resource_payloads(resources, schemas)
-    schema = schemas["schema"]
-    schema_digest = byte_digest(payloads["schema.json"])
+    schema = schemas["tabular_schema"]
+    schema_digest = byte_digest(payloads["tabular_schema.json"])
     expected_names = {table.name for table in catalog()} - {"build"}
     if set(tables) != expected_names:
         msg = "snapshot requires exactly every non-build table"

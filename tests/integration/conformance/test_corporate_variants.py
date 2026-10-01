@@ -6,7 +6,7 @@ import pytest
 from tests.integration.conformance.corpus import load_case
 from tests.integration.conformance.reader import ReaderError, replay_rows, validate_rows
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.primitives import ContractError
 from jbt.contracts.validation import validate_tables
 
@@ -24,7 +24,7 @@ def _amount(row: dict[str, object], field: str) -> Fraction:
 def test_corporate_history_replays_exact_components_without_applying_ratios() -> None:
     case = load_case("corporate-variants")
     validate_tables(case.tables)
-    validate_rows(case.tables, schema_document())
+    validate_rows(case.tables, tabular_schema())
     entity = case.tables["build"][0]["entity_id"]
     assert isinstance(entity, str)
     replay = replay_rows(case.tables, entity=entity)
@@ -159,10 +159,10 @@ def test_symbol_lookup_cannot_resolve_to_two_instruments(scenario: str) -> None:
         with pytest.raises(ContractError, match="ambiguous_commodity_symbol"):
             validate_tables(tables)
         with pytest.raises(ReaderError, match="ambiguous commodity symbol"):
-            validate_rows(tables, schema_document())
+            validate_rows(tables, tabular_schema())
     else:
         validate_tables(tables)
-        validate_rows(tables, schema_document())
+        validate_rows(tables, tabular_schema())
 
 
 @pytest.mark.parametrize(

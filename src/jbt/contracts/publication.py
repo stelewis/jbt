@@ -6,7 +6,7 @@ from hashlib import sha256
 
 from jsonschema import ValidationError
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.declarations import decode_declaration, field_registry
 from jbt.contracts.primitives import ContractError, require
 from jbt.contracts.schemas import (
@@ -93,7 +93,7 @@ def validate_registries(registries: dict) -> None:
 
 
 def _resolve(reference: dict, entity: str, tables: Tables) -> dict:
-    specs = {t["name"]: t for t in schema_document()["tables"]}
+    specs = {t["name"]: t for t in tabular_schema()["tables"]}
     table = reference["table"]
     require(table in specs, "record_kind", "reference")
     fields = specs[table]["primary_key"][1:]
@@ -274,7 +274,7 @@ def _active_refs(value: object, entity: str, tables: Tables) -> None:
 def _active_guard(guard: dict, entity: str, tables: Tables) -> None:
     target = guard["target"]
     row = _resolve(target, entity, tables)
-    specs = {table["name"]: table for table in schema_document()["tables"]}
+    specs = {table["name"]: table for table in tabular_schema()["tables"]}
     columns = {column["name"]: column for column in specs[target["table"]]["columns"]}
     fields = guard["fields"]
     require(

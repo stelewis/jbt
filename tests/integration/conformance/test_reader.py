@@ -27,7 +27,7 @@ from tests.integration.conformance.reader import (
 
 from jbt.artifacts.parquet import Compression, WriterSettings, write_table
 from jbt.artifacts.snapshot import BuildInput, SnapshotInput, assemble_snapshot
-from jbt.contracts.catalog import catalog, schema_document
+from jbt.contracts.catalog import catalog, tabular_schema
 from jbt.contracts.primitives import ContractError
 from jbt.contracts.schemas import (
     configuration_schema,
@@ -70,7 +70,7 @@ def load_case(name: str) -> Case:
 def approved_schemas() -> dict[str, str]:
     """Pin the approved contract independently of the snapshot being read."""
     documents = {
-        "schema": schema_document(),
+        "tabular_schema": tabular_schema(),
         "configuration_schema": configuration_schema(),
         "declaration_schema": declaration_schema(),
         "descriptor_schema": descriptor_schema(),
@@ -337,7 +337,7 @@ def test_fee_lineage_tracks_original_fee_without_another_expense() -> None:
 @pytest.mark.parametrize("mutation", ["version", "foreign", "null", "type", "order"])
 def test_shipped_schema_is_interpreted_independently(mutation: str) -> None:
     case = load_case("cash")
-    schema = schema_document()
+    schema = tabular_schema()
     if mutation == "version":
         schema["schema_version"] = 2
     elif mutation == "foreign":
@@ -382,7 +382,7 @@ def test_independent_declaration_revision_checks_exact_meaning(
     with pytest.raises(
         ReaderError, match=r"declaration revision identity|kind or version"
     ):
-        validate_rows(case.tables, schema_document())
+        validate_rows(case.tables, tabular_schema())
 
 
 @pytest.mark.parametrize(
@@ -413,19 +413,19 @@ def test_independent_basis_effect_targets_exact_change(
     application["target_id"] = case.aliases[target_alias]
     specification = next(
         row
-        for row in schema_document()["tables"]
+        for row in tabular_schema()["tables"]
         if row["name"] == "action_applications"
     )
     case.tables["action_applications"].sort(
         key=lambda row: tuple(row[key] for key in specification["sort_key"])
     )
     with pytest.raises(ReaderError, match=expected):
-        validate_rows(case.tables, schema_document())
+        validate_rows(case.tables, tabular_schema())
 
 
 def test_independent_reader_rejects_transferred_reference_repricing() -> None:
     case = load_case("reference-variants")
-    validate_rows(case.tables, schema_document())
+    validate_rows(case.tables, tabular_schema())
     tables = deepcopy(case.tables)
     for alias, field in (
         ("variant-transfer-in", "reference_after"),
@@ -438,7 +438,7 @@ def test_independent_reader_rejects_transferred_reference_repricing() -> None:
         )
         change[field + "_coefficient"] = "102"
     with pytest.raises(ReaderError, match="transferred reference changed"):
-        validate_rows(tables, schema_document())
+        validate_rows(tables, tabular_schema())
 
 
 @pytest.mark.parametrize(
@@ -455,7 +455,7 @@ def test_independent_reader_rejects_incomparable_source_sequence(
     case = load_case("source-sequence")
     validate_rows(
         case.tables,
-        schema_document(),
+        tabular_schema(),
         source_sequence_directions=SOURCE_SEQUENCE_DIRECTIONS,
     )
     tables = deepcopy(case.tables)
@@ -482,7 +482,7 @@ def test_independent_reader_rejects_incomparable_source_sequence(
     with pytest.raises(ReaderError, match=message):
         validate_rows(
             tables,
-            schema_document(),
+            tabular_schema(),
             source_sequence_directions=SOURCE_SEQUENCE_DIRECTIONS,
         )
 
@@ -490,7 +490,7 @@ def test_independent_reader_rejects_incomparable_source_sequence(
 def test_source_sequence_requires_one_retained_direction() -> None:
     case = load_case("source-sequence")
     with pytest.raises(ReaderError, match="missing source sequence direction"):
-        validate_rows(case.tables, schema_document())
+        validate_rows(case.tables, tabular_schema())
     entry = {
         "source_scope_id": "synthetic-fixture",
         "sequence_domain": "statement-events",
@@ -1407,14 +1407,16 @@ def test_version_one_schema_cannot_redefine_approved_table_semantics(
     artifact_root: Path,
 ) -> None:
     _snapshot(artifact_root)
-    schema_path = artifact_root / "schema.json"
+    schema_path = artifact_root / "tabular_schema.json"
     schema = json.loads(schema_path.read_bytes())
     schema["tables"][0]["columns"][0]["nullable"] = True
     schema_path.write_bytes(canonical_bytes(schema, integer_strings=False))
     descriptor_path = artifact_root / "descriptor.json"
     descriptor = json.loads(descriptor_path.read_bytes())
     schema_entry = next(
-        entry for entry in descriptor["payloads"] if entry["path"] == "schema.json"
+        entry
+        for entry in descriptor["payloads"]
+        if entry["path"] == "tabular_schema.json"
     )
     schema_entry["byte_digest"] = hashlib.sha256(schema_path.read_bytes()).hexdigest()
     descriptor_bytes = canonical_bytes(descriptor)

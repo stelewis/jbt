@@ -9,7 +9,7 @@ from functools import lru_cache
 
 from jsonschema import ValidationError
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.primitives import ContractError, require, validate_number
 from jbt.contracts.schemas import declaration_schema, validate_document
 
@@ -30,7 +30,7 @@ def field_registry() -> tuple[dict, ...]:
         "postings.category_id",
     }
     corrections = {*permitted_rules, "transactions.event_state", "postings.amount"}
-    for table in schema_document()["tables"]:
+    for table in tabular_schema()["tables"]:
         for name, kind in table["logical_fields"].items():
             qualified = f"{table['name']}.{name}"
             if table["name"] in {"transactions", "postings"} and name.startswith(
@@ -97,7 +97,7 @@ def _ordered(items: list, fields: tuple[str, ...], location: str) -> None:
 
 def _assignments(payload: dict) -> None:
     registry = {row["field_name"]: row for row in field_registry()}
-    tables = {t["name"]: t for t in schema_document()["tables"]}
+    tables = {t["name"]: t for t in tabular_schema()["tables"]}
     for assignment in payload["assignments"]:
         field = assignment["field"]
         require(field in registry, "assignment_field", payload["kind"])

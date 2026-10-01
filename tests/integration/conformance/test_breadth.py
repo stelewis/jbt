@@ -9,7 +9,7 @@ from tests.integration.conformance.breadth import FAMILIES, family_cases
 from tests.integration.conformance.corpus import load_case as load_specimen
 from tests.integration.conformance.reader import ReaderError, replay_rows, validate_rows
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.declarations import validate_declaration
 from jbt.contracts.validation import ContractError, validate_tables
 
@@ -61,7 +61,7 @@ def test_family_selection_uses_the_shared_corpus_loader() -> None:
 def test_same_day_evidenced_order_changes_lot_quantities(name: str, total: int) -> None:
     case = load_case("breadth/" + name)
     validate_tables(case.tables)
-    validate_rows(case.tables, schema_document())
+    validate_rows(case.tables, tabular_schema())
     entity = case.tables["build"][0]["entity_id"]
     replay = replay_rows(case.tables, entity=entity)
     slices = [
@@ -101,7 +101,7 @@ def test_missing_or_backward_same_day_precedence_is_not_inferred() -> None:
     without_edge = deepcopy(case.tables)
     without_edge["book_step_dependencies"] = []
     with pytest.raises(ReaderError, match="missing decisive same-day order"):
-        validate_rows(without_edge, schema_document())
+        validate_rows(without_edge, tabular_schema())
     with pytest.raises(ReaderError, match="missing decisive same-day order"):
         replay_rows(without_edge, entity=entity)
     reversed_edge = deepcopy(case.tables)

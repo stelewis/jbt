@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from datetime import date
 from fractions import Fraction
 
-from jbt.contracts.catalog import schema_document
+from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.declarations import decode_declaration
 from jbt.contracts.primitives import ContractError, number, require, validate_number
 from jbt.domain.identity import (
@@ -1931,7 +1931,7 @@ def validate_tables(tables: Tables) -> None:
     External custody/registry references require manifest validation as well.
     This validates supplied decisions, never selecting inventory or prices.
     """
-    specs = {t["name"]: t for t in schema_document()["tables"]}
+    specs = {t["name"]: t for t in tabular_schema()["tables"]}
     indexes = _structure(tables, specs)
     for declaration in tables["declarations"]:
         payload = decode_declaration(declaration["payload_json"])

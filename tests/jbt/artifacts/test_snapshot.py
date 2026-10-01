@@ -127,6 +127,16 @@ def test_complete_empty_snapshot_is_pinned_without_digest_cycle(
     assert manifest["logical_content_digest"] == result.financial_digest
     assert len(list(tmp_path.glob("*.parquet"))) == len(catalog())
     assert manifest["schema_version"] == "1"
+    assert (tmp_path / "tabular_schema.json").is_file()
+    assert not (tmp_path / "schema.json").exists()
+    schemas = manifest["schemas"]
+    assert isinstance(schemas, list)
+    assert any(
+        isinstance(entry, dict)
+        and entry.get("schema_id") == "tabular_schema"
+        and entry.get("path") == "tabular_schema.json"
+        for entry in schemas
+    )
 
 
 def test_writer_encoding_changes_bytes_not_financial_content(

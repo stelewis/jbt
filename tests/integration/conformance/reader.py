@@ -32,7 +32,7 @@ MAX_PAYLOAD_BYTES = 64 * 1024 * 1024
 SCHEMA_FILES = frozenset(
     name + ".json"
     for name in (
-        "schema",
+        "tabular_schema",
         "declaration_schema",
         "manifest_schema",
         "descriptor_schema",
@@ -1429,9 +1429,10 @@ def _artifact_documents(
             == canonical_bytes(_json(payloads[name]), integer_strings=False),
             "noncanonical schema",
         )
-    schema = _json(payloads["schema.json"])
+    schema = _json(payloads["tabular_schema.json"])
     _require(
-        payloads["schema.json"] == canonical_bytes(schema, integer_strings=False),
+        payloads["tabular_schema.json"]
+        == canonical_bytes(schema, integer_strings=False),
         "noncanonical schema",
     )
     _require(schema["schema_version"] == expected_version, "mixed schema versions")
@@ -1504,7 +1505,7 @@ def _verify_manifest(
     for row in tables["build"]:
         _require(
             row["manifest_digest"] == descriptor["manifest_digest"]
-            and row["schema_digest"] == payloads["schema.json"],
+            and row["schema_digest"] == payloads["tabular_schema.json"],
             "mixed build generation",
         )
 

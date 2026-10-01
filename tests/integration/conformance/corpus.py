@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from jbt.contracts.catalog import Table, catalog, schema_document
+from jbt.contracts.catalog import Table, catalog, tabular_schema
 from jbt.domain.identity import (
     AcquiredAnchor,
     Occurrence,
@@ -413,7 +413,7 @@ class _Bundle:
             "action_applications",
             "fee_allocations",
         }
-        for table in schema_document()["tables"]:
+        for table in tabular_schema()["tables"]:
             if table["name"] in {"provenance", "build", "declarations"}:
                 continue
             for row in self.rows[table["name"]]:
@@ -501,7 +501,7 @@ class _Bundle:
         return result
 
     def _expand_numerics(self) -> None:
-        for table in schema_document()["tables"]:
+        for table in tabular_schema()["tables"]:
             for row in self.rows[table["name"]]:
                 row.pop("_provenanced", None)
                 for group in table["numeric_groups"]:
@@ -546,7 +546,7 @@ class _Bundle:
             ).hexdigest(),
             producer_version="conformance-specimen",
             schema_version=1,
-            schema_digest=sha256(_json(schema_document()).encode()).hexdigest(),
+            schema_digest=sha256(_json(tabular_schema()).encode()).hexdigest(),
             as_of="2026-12-31",
             execution_fingerprint=sha256(b"fixture-expansion-v1").hexdigest(),
             is_dirty=False,
