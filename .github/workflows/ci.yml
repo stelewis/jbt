@@ -50,7 +50,7 @@ jobs:
   hygiene:
     name: Hygiene (pre-commit)
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -63,7 +63,7 @@ jobs:
       - name: Run hygiene hooks
         run: >-
           uv run --locked prek run --all-files
-          trailing-whitespace end-of-file-fixer check-yaml check-added-large-files
+          trailing-whitespace end-of-file-fixer check-yaml check-added-large-files cspell
 
   lint:
     name: Lint (ruff)

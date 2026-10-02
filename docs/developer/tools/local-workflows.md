@@ -44,9 +44,11 @@ Install `pre-commit` and `commit-msg` hooks through one command:
 
 - `uv run --locked prek install`
 
-The default hook set covers hygiene checks, lockfile updates, Ruff formatting and linting, secret scanning, commit message policy, type checking, and Bandit.
+The default hook set covers hygiene checks, Markdown spelling, lockfile updates, Ruff formatting and linting, secret scanning, commit message policy, type checking, and Bandit.
 
 Run all hooks locally with `uv run --locked prek run -a`.
+
+Run spelling alone with `uv run --locked prek run cspell --all-files`. The hook checks tracked Markdown, including future documentation pages. Add reviewed project terms to `cspell.json`; correct typos in the text instead of whitelisting them. The VS Code Code Spell Checker extension can use the same config for immediate feedback, but is optional.
 
 When rotating external hook revisions, use a frozen update flow so `.pre-commit-config.yaml` stays SHA pinned. See [Pin maintenance](./pin-maintenance.md).
 

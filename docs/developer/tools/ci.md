@@ -8,6 +8,7 @@ The CI workflow enforces:
 
 - commit message policy through Commitizen
 - project hygiene checks through selected `prek` hooks
+- Markdown spelling through the pinned CSpell hook
 - formatting and lint through Ruff
 - type checking through `uv check` and Ty
 - test quality checks through `tq`
