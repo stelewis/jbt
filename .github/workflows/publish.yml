@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build distributions
@@ -15,31 +19,35 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.release.tag_name }}
           persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14"
-      - name: Set up uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version: "0.12.4"
-      - name: Install development dependencies
-        run: uv sync --locked --all-groups --python "3.14"
-      - name: Verify release tag
+      - name: Setup Python + uv + deps
+        uses: ./.github/actions/setup-python-uv
+      - name: Verify immutable release policy
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ github.event.release.id }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_METADATA: ${{ runner.temp }}/jbt-release.json
         run: |
-          python - <<'PY'
+          gh api --method GET -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/$GH_REPO/releases/$RELEASE_ID" > "$RELEASE_METADATA"
+          uv run --locked python - <<'PY'
+          import json
           import os
           import pathlib
+          import runpy
           import tomllib
 
           project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
-          expected = f"v{project['version']}"
-          actual = os.environ["RELEASE_TAG"]
-          if actual != expected:
-              raise SystemExit(f"release tag {actual!r} must be {expected!r}")
+          check = runpy.run_path(".github/scripts/check_release.py")["check_publication"]
+          check(
+              project["version"],
+              os.environ["RELEASE_TAG"],
+              json.loads(pathlib.Path(os.environ["RELEASE_METADATA"]).read_bytes()),
+              release_id=int(os.environ["RELEASE_ID"]),
+          )
           PY
       - name: Run quality gates
         run: |
@@ -50,6 +58,15 @@ jobs:
           uv run --no-sync pytest
       - name: Build distributions
         run: uv build --no-sources
+      - name: Check the final distribution archives
+        run: uv run --no-sync python .github/scripts/check_release.py --distributions dist
+      - name: Exercise financial replay with the final wheel
+        run: |
+          wheels=(dist/*.whl)
+          test "${#wheels[@]}" -eq 1
+          wheel="${wheels[0]}"
+          test -f "$wheel"
+          uv run --locked pytest -q -m e2e --release-wheel "$wheel"
       - name: Store distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -75,3 +92,5 @@ jobs:
           path: dist/
       - name: Publish distributions to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          skip-existing: false

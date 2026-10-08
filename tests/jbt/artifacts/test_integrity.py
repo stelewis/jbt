@@ -1,3 +1,4 @@
+import os
 from typing import TYPE_CHECKING
 
 import pytest
@@ -120,6 +121,13 @@ def test_symlink_even_with_correct_digest_fails(tmp_path: Path) -> None:
     with pytest.raises(ArtifactIntegrityError) as error:
         read_payload(tmp_path, "manifest.json", byte_digest(b"{}"), maximum_bytes=10)
     assert error.value.code is IntegrityCode.SYMLINK
+
+
+def test_special_file_is_rejected_without_blocking(tmp_path: Path) -> None:
+    os.mkfifo(tmp_path / "manifest.json")
+    with pytest.raises(ArtifactIntegrityError) as error:
+        read_payload(tmp_path, "manifest.json", "0" * 64, maximum_bytes=10)
+    assert error.value.code is IntegrityCode.PATH
 
 
 @pytest.mark.parametrize("limit", [0, -1, True])

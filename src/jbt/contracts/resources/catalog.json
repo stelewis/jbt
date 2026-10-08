@@ -834,8 +834,7 @@
         "schema_version": "integer",
         "schema_digest": "string",
         "as_of": "date",
-        "execution_fingerprint": "string",
-        "is_dirty": "boolean"
+        "execution_fingerprint": "string"
       }
     }
   ],

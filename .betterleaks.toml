@@ -1,7 +1,14 @@
 betterleaksMinVersion = "1.8.1"
 filter = '''
+(
 attributes["path"] == ".pre-commit-config.yaml" &&
 filter.matchesAny(finding["line"], [`^\s*rev:\s*[0-9a-f]{40}\s+# frozen:`])
+)
+||
+(
+attributes["path"] == "examples/cash/project.json" &&
+filter.matchesAny(finding["line"], [`^\s*"accession_id": "(?:ef710272ebe4d457e7b2d32aacc26120017112c22b6ad6ef27954b3e380377f4|d24b613de5c07e44b6c08331525fbec4d214a02c18210d7b9ce19f25e185f602)",?\s*$`])
+)
 '''
 
 [extend]

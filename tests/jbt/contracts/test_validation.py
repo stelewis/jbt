@@ -1,3 +1,4 @@
+import json
 from copy import deepcopy
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,7 @@ from jbt.contracts.validation import (
     _action_effects,
     _economic_identities,
     _intervals,
+    _positions_and_lineage,
     validate_link_members,
     validate_tables,
 )
@@ -72,7 +74,6 @@ def snapshot() -> dict:
             "schema_digest": "1" * 64,
             "as_of": "2026-01-01",
             "execution_fingerprint": "2" * 64,
-            "is_dirty": False,
         }
     ]
     tables["transactions"] = [
@@ -120,7 +121,9 @@ def test_complete_empty_tables_and_required_nulls_are_valid(snapshot: dict) -> N
         (lambda t: t["transactions"][0].update(entity_id="other"), "entity_build"),
         (lambda t: t["build"][0].update(schema_version=2), "schema_version"),
         (lambda t: t["build"][0].update(schema_version=True), "physical_type"),
-        (lambda t: t["build"][0].update(is_dirty=0), "physical_type"),
+        (lambda t: t["build"][0].update(is_dirty=None), "closed_row"),
+        (lambda t: t["build"][0].update(is_dirty=False), "closed_row"),
+        (lambda t: t["build"][0].update(is_dirty=True), "closed_row"),
         (lambda t: t["transactions"][0].update(narration="e\u0301"), "text_nfc"),
     ],
 )
@@ -215,6 +218,78 @@ def test_authored_economic_identity_uses_stable_key_not_revision_id() -> None:
     indexes["transactions"][("e", wrong["record_id"])] = {"event_state": "recognized"}
     with pytest.raises(ContractError, match="economic_identity_canonical"):
         _economic_identities({**tables, "economic_identities": [wrong]}, indexes)
+
+
+@pytest.mark.parametrize(
+    ("case_id", "table", "kind", "field"),
+    [
+        ("cash", "positions", "position", "position_id"),
+        ("pools", "inventory_pools", "pool", "pool_id"),
+    ],
+)
+def test_authored_position_and_pool_ids_match_payload_not_declaration_key(
+    case_id: str, table: str, kind: str, field: str
+) -> None:
+    from tests.integration.conformance.corpus import load_case  # noqa: PLC0415
+
+    case = load_case(case_id)
+    row = deepcopy(case.tables[table][0])
+    declaration = deepcopy(
+        next(
+            item
+            for item in case.tables["declarations"]
+            if item["declaration_id"] == row["declaration_id"]
+        )
+    )
+    declaration["declaration_key"] = "unrelated-authored-key"
+    row[field] = f"explicit-{kind}-id"
+    payload_json = declaration["payload_json"]
+    assert isinstance(payload_json, str)
+    payload = json.loads(payload_json)
+    payload[field] = row[field]
+    declaration["payload_json"] = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    positions = (
+        [row]
+        if table == "positions"
+        else [
+            deepcopy(
+                next(
+                    item
+                    for item in case.tables["positions"]
+                    if item["position_id"] == row["position_id"]
+                )
+            )
+        ]
+    )
+    declarations = [declaration]
+    if table == "inventory_pools":
+        declarations.append(
+            next(
+                item
+                for item in case.tables["declarations"]
+                if item["declaration_id"] == positions[0]["declaration_id"]
+            )
+        )
+    tables = {
+        "positions": positions,
+        "inventory_pools": [row] if table == "inventory_pools" else [],
+        "lots": [],
+        "opening_lots": [],
+    }
+    indexes = {
+        "declarations": {
+            (item["entity_id"], item["declaration_id"]): item for item in declarations
+        },
+        "positions": {
+            (item["entity_id"], item["position_id"]): item for item in positions
+        },
+    }
+    _positions_and_lineage(tables, indexes)
+    row[field] = "different-authored-id"
+    with pytest.raises(ContractError, match=f"{kind}_identity"):
+        _positions_and_lineage(tables, indexes)
 
 
 def test_declaration_interval_allows_unbounded_start_with_finite_end() -> None:

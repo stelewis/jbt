@@ -1,6 +1,5 @@
 import hashlib
 import json
-import shutil
 import subprocess
 import sys
 from copy import deepcopy
@@ -9,13 +8,19 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from uuid import uuid4
 
 import pytest
-from tests.integration.conformance.corpus import load_case as load_specimen
+from tests.integration.conformance.corpus import (
+    approved_schemas,
+)
+from tests.integration.conformance.corpus import (
+    load_case as load_specimen,
+)
 from tests.integration.conformance.reader import (
     ReaderError,
     _sequence_directions,
+    _validate_position_identities,
+    _wire_integers,
     canonical_bytes,
     check_assertions,
     effective_posting_date,
@@ -25,18 +30,17 @@ from tests.integration.conformance.reader import (
     validate_rows,
 )
 
+from jbt.artifacts.execution import ExecutionFacts, Producer
 from jbt.artifacts.parquet import Compression, WriterSettings, write_table
-from jbt.artifacts.snapshot import BuildInput, SnapshotInput, assemble_snapshot
+from jbt.artifacts.reader import read_snapshot as read_production_snapshot
+from jbt.artifacts.snapshot import (
+    BuildInput,
+    OutputPayload,
+    SnapshotInput,
+    assemble_snapshot,
+)
 from jbt.contracts.catalog import catalog, tabular_schema
 from jbt.contracts.primitives import ContractError
-from jbt.contracts.schemas import (
-    configuration_schema,
-    declaration_schema,
-    descriptor_schema,
-    extraction_schema,
-    manifest_schema,
-    registry_schema,
-)
 
 INDEX_CASE_IDS = tuple(
     json.loads((Path(__file__).parent / "fixtures/index.json").read_text())["cases"]
@@ -46,8 +50,6 @@ SOURCE_SEQUENCE_DIRECTIONS = {
 }
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from tests.integration.conformance.corpus import FixtureCase
     from tests.integration.conformance.reader import ReplayResult, Row, Snapshot
 
@@ -67,23 +69,21 @@ def load_case(name: str) -> Case:
     )
 
 
-def approved_schemas() -> dict[str, str]:
-    """Pin the approved contract independently of the snapshot being read."""
-    documents = {
-        "tabular_schema": tabular_schema(),
-        "configuration_schema": configuration_schema(),
-        "declaration_schema": declaration_schema(),
-        "descriptor_schema": descriptor_schema(),
-        "extraction_schema": extraction_schema(),
-        "manifest_schema": manifest_schema(),
-        "registry_schema": registry_schema(),
+def test_independent_wire_decoder_respects_tuple_schema_and_boolean_items() -> None:
+    schema = {
+        "$defs": {},
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "array",
+                "prefixItems": [{"type": "integer"}],
+                "items": False,
+            }
+        },
     }
-    return {
-        name + ".json": hashlib.sha256(
-            canonical_bytes(document, integer_strings=False)
-        ).hexdigest()
-        for name, document in documents.items()
-    }
+    assert _wire_integers({"key": ["2"]}, schema, schema) == {"key": [2]}
+    with pytest.raises(ReaderError, match="rejected by schema"):
+        _wire_integers({"key": ["2", "extra"]}, schema, schema)
 
 
 @pytest.mark.parametrize(
@@ -275,6 +275,137 @@ def test_complete_empty_scope_is_not_a_missing_assertion() -> None:
     assert result[0].status == "pass"
 
 
+def test_prior_point_is_source_only_but_in_period_opening_still_fails() -> None:
+    case = load_case("cash")
+    entity = case.tables["build"][0]["entity_id"]
+    position = case.tables["positions"][0]
+    case.tables["assertion_scopes"] = [
+        {
+            "entity_id": entity,
+            "scope_id": "opening-scope",
+            "account_id": position["account_id"],
+            "measurement": "units",
+            "scope_kind": "positions",
+            "coverage_basis": "explicit-basis",
+            "selection": "positions",
+            "position_ids": [position["position_id"]],
+        }
+    ]
+    case.tables["balance_assertions"] = [
+        {
+            "entity_id": entity,
+            "scope_id": "opening-scope",
+            "assertion_set_id": identity,
+            "date": when,
+            "assertion_kind": kind,
+            "is_complete": False,
+        }
+        for identity, when, kind in (
+            ("prior-point", "2025-12-31", "point"),
+            ("in-period-opening", "2026-01-01", "opening"),
+        )
+    ]
+    case.tables["balances"] = [
+        {
+            "entity_id": entity,
+            "assertion_set_id": identity,
+            "position_id": position["position_id"],
+            "commodity_id": position["commodity_id"],
+            "amount_coefficient": "100",
+            "amount_scale": 0,
+            "amount_source_scale": 0,
+        }
+        for identity in ("prior-point", "in-period-opening")
+    ]
+    result = check_assertions(
+        case.tables, entity=entity, date_roles={"explicit-basis": "posted"}
+    )
+    assert [(answer.assertion_set_id, answer.status) for answer in result] == [
+        ("prior-point", "not_evaluable"),
+        ("in-period-opening", "fail"),
+    ]
+
+
+def test_utc_midnight_point_excludes_same_day_civil_transactions() -> None:
+    case = load_case("cash")
+    entity = case.tables["build"][0]["entity_id"]
+    position = next(
+        row
+        for row in case.tables["positions"]
+        if row["position_id"] == case.aliases["cash-A"]
+    )
+    transactions = case.tables["transactions"]
+    transactions[0]["date_posted"] = "2025-12-31"
+    transactions[1]["date_posted"] = "2026-01-01"
+    case.tables["book_steps"][0]["effective_date"] = "2025-12-31"
+    case.tables["book_steps"][1]["effective_date"] = "2026-01-01"
+    case.tables["assertion_scopes"] = [
+        {
+            "entity_id": entity,
+            "scope_id": "cash-scope",
+            "account_id": position["account_id"],
+            "measurement": "units",
+            "scope_kind": "positions",
+            "coverage_basis": "posted-basis",
+            "selection": "positions",
+            "position_ids": [position["position_id"]],
+        }
+    ]
+    case.tables["balance_assertions"] = [
+        {
+            "entity_id": entity,
+            "scope_id": "cash-scope",
+            "assertion_set_id": identity,
+            "date": when,
+            "assertion_kind": "point",
+            "is_complete": False,
+            "timestamp_date": when,
+            "timestamp_local": "00:00:00",
+            "timestamp_offset_minutes": 0,
+            "timestamp_zone": "GMT",
+            "timestamp_precision": "second",
+            "timestamp_fraction_digits": None,
+        }
+        for identity, when in (
+            ("opening-point", "2026-01-01"),
+            ("closing-point", "2026-02-01"),
+        )
+    ]
+    case.tables["balances"] = [
+        {
+            "entity_id": entity,
+            "assertion_set_id": identity,
+            "position_id": position["position_id"],
+            "commodity_id": position["commodity_id"],
+            "amount_coefficient": amount,
+            "amount_scale": 0,
+            "amount_source_scale": 0,
+        }
+        for identity, amount in (("opening-point", "100"), ("closing-point", "115"))
+    ]
+    date_roles = {"posted-basis": "posted"}
+    result = check_assertions(case.tables, entity=entity, date_roles=date_roles)
+    assert [answer.status for answer in result] == ["pass", "pass"], result
+    assert result[0].observed == {position["position_id"]: Fraction(100)}
+    assert result[1].observed == {position["position_id"]: Fraction(115)}
+
+    case.tables["balance_assertions"][0]["timestamp_local"] = "00:00:01"
+    result = check_assertions(case.tables, entity=entity, date_roles=date_roles)
+    assert [answer.status for answer in result] == ["not_evaluable", "pass"]
+
+    case.tables["balance_assertions"][0]["timestamp_local"] = "00:00:00"
+    case.tables["book_steps"][0]["timestamp_precision"] = "second"
+    result = check_assertions(case.tables, entity=entity, date_roles=date_roles)
+    assert [answer.status for answer in result] == [
+        "not_evaluable",
+        "not_evaluable",
+    ]
+    case.tables["book_steps"][0]["timestamp_precision"] = None
+    case.tables["balance_assertions"][0]["timestamp_zone"] = "Europe/London"
+    result = check_assertions(case.tables, entity=entity, date_roles=date_roles)
+    assert [answer.status for answer in result] == ["not_evaluable", "pass"]
+
+
 def test_reference_resets_replay_without_calculating_another_settlement() -> None:
     case = load_case("reference")
     entity = case.tables["build"][0]["entity_id"]
@@ -383,6 +514,54 @@ def test_independent_declaration_revision_checks_exact_meaning(
         ReaderError, match=r"declaration revision identity|kind or version"
     ):
         validate_rows(case.tables, tabular_schema())
+
+
+def test_position_identity_is_explicit_authored_id_not_declaration_key_hash() -> None:
+    case = load_case("cash")
+    position = next(row for row in case.tables["positions"] if row["declaration_id"])
+    declaration = next(
+        row
+        for row in case.tables["declarations"]
+        if row["declaration_id"] == position["declaration_id"]
+    )
+    position["position_id"] = "authored-stable-position"
+    declaration["declaration_key"] = "different-authored-key"
+    payload = json.loads(declaration["payload_json"])
+    payload["position_id"] = position["position_id"]
+    declaration["payload_json"] = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    _validate_position_identities(case.tables)
+    payload["position_id"] = "different-position"
+    declaration["payload_json"] = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    with pytest.raises(ReaderError, match="position identity"):
+        _validate_position_identities(case.tables)
+
+
+def test_pool_identity_is_explicit_authored_id_not_declaration_key_hash() -> None:
+    case = load_case("pools")
+    pool = case.tables["inventory_pools"][0]
+    declaration = next(
+        row
+        for row in case.tables["declarations"]
+        if row["declaration_id"] == pool["declaration_id"]
+    )
+    pool["pool_id"] = "authored-stable-pool"
+    declaration["declaration_key"] = "different-authored-key"
+    payload = json.loads(declaration["payload_json"])
+    payload["pool_id"] = pool["pool_id"]
+    declaration["payload_json"] = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    _validate_position_identities(case.tables)
+    payload["pool_id"] = "different-pool"
+    declaration["payload_json"] = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    with pytest.raises(ReaderError, match="pool identity"):
+        _validate_position_identities(case.tables)
 
 
 @pytest.mark.parametrize(
@@ -563,13 +742,8 @@ def test_publication_rejects_registered_direction_disagreeing_with_ordinals(
 
 
 @pytest.fixture
-def artifact_root() -> Iterator[Path]:
-    root = Path.cwd() / (".reader-fixture-" + uuid4().hex)
-    root.mkdir()
-    try:
-        yield root
-    finally:
-        shutil.rmtree(root)
+def artifact_root(tmp_path: Path) -> Path:
+    return tmp_path
 
 
 def _snapshot(  # noqa: PLR0913
@@ -580,6 +754,8 @@ def _snapshot(  # noqa: PLR0913
     staged_tables: dict[str, list[Row]] | None = None,
     active_correction: str | None = None,
     sequence_direction: str = "ascending",
+    output_payloads: tuple[OutputPayload, ...] = (),
+    extra_schemas: dict[str, dict] | None = None,
 ) -> str:
     case = load_specimen(case_id)
     tables = staged_tables if staged_tables is not None else case.tables
@@ -631,6 +807,22 @@ def _snapshot(  # noqa: PLR0913
         canonical_bytes(sequence_registry, integer_strings=False)
         if sequence_registry is not None
         else None
+    )
+    definition_ids = sorted(
+        {
+            row["derivation_id"]
+            for row in tables["provenance"]
+            if row["derivation_id"] is not None and not empty
+        },
+        key=str,
+    )
+    definitions = {
+        identity: {"version": 1, "meaning": "synthetic fixture determination"}
+        for identity in definition_ids
+    }
+    definition_bytes = canonical_bytes(
+        {"schema_version": 1, "definitions": definitions},
+        integer_strings=False,
     )
     metadata = {
         "artifacts": [],
@@ -689,6 +881,10 @@ def _snapshot(  # noqa: PLR0913
             "path": "configuration.json",
             "byte_digest": hashlib.sha256(configuration).hexdigest(),
         },
+        "derivation_definitions": {
+            "path": "derivations.json",
+            "byte_digest": hashlib.sha256(definition_bytes).hexdigest(),
+        },
         "toolchain": [
             {"component": "fixture", "version": "1", "content_digest": "c" * 64}
         ],
@@ -700,32 +896,16 @@ def _snapshot(  # noqa: PLR0913
                 "declaration_ids": [],
                 "units": "declared-components",
                 "content_digest": hashlib.sha256(
-                    cast("str", identity).encode()
+                    canonical_bytes(definitions[identity], integer_strings=False)
                 ).hexdigest(),
             }
-            for identity in sorted(
-                {
-                    row["derivation_id"]
-                    for row in tables["provenance"]
-                    if row["derivation_id"] is not None and not empty
-                },
-                key=str,
-            )
+            for identity in definition_ids
         ],
         "capabilities": [],
         "checks": [],
         "outputs": [{"sink": "tabular", "required_checks": []}],
         "inputs": [],
     }
-    metadata["recovery_set"]["runtime"] = [
-        {
-            "runtime_id": "synthetic-python",
-            "version": "3.14",
-            "platform": "synthetic",
-            "path": "retained/python",
-            "byte_digest": "d" * 64,
-        }
-    ]
     metadata["recovery_set"]["vault_objects"] = [
         {
             "object_id": digest,
@@ -753,18 +933,22 @@ def _snapshot(  # noqa: PLR0913
                     producer_version="independent-reader-test",
                     as_of=cast("str", row["as_of"]),
                     input_fingerprint="a" * 64,
-                    is_dirty=False,
                 )
             ],
             metadata=metadata,
             resources={
                 "configuration.json": configuration,
+                "derivations.json": definition_bytes,
                 **(
                     {"registry.json": registry_bytes}
                     if registry_bytes is not None
                     else {}
                 ),
             },
+            execution=ExecutionFacts(Producer("fixture", "1", "c" * 64), "d" * 64),
+            writer_version="synthetic",
+            output_payloads=output_payloads,
+            extra_schemas=extra_schemas or {},
         ),
         WriterSettings(
             compression=Compression.ZSTD,
@@ -774,6 +958,59 @@ def _snapshot(  # noqa: PLR0913
         ),
     )
     return result.descriptor_digest
+
+
+def test_duplicate_extract_artifacts_are_not_duplicate_financial_evidence(
+    tmp_path: Path,
+) -> None:
+    document = {
+        "schema_version": 1,
+        "source_scope_id": "selected-scope",
+        "source_blob_digest": "sha256:synthetic",
+        "importer_id": "ofx",
+        "source_scope": {
+            "source_class": "statement",
+            "institution": None,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "completeness": "unstated",
+            "source_accounts": [],
+            "revisions": [],
+        },
+        "records": [],
+        "unsupported_content": [],
+    }
+    payload = canonical_bytes(document, integer_strings=False)
+    duplicate = OutputPayload(
+        "extract",
+        "extract-1.json",
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+        "extraction_schema",
+    )
+    original = OutputPayload(
+        "extract",
+        "extract-0.json",
+        payload,
+        hashlib.sha256(payload).hexdigest(),
+        "extraction_schema",
+    )
+    digests = []
+    for name, artifacts in (
+        ("single", (original,)),
+        ("duplicate", (original, duplicate)),
+    ):
+        root = tmp_path / name
+        root.mkdir()
+        descriptor_digest = _snapshot(root, empty=True, output_payloads=artifacts)
+        snapshot = read_snapshot(
+            root,
+            descriptor_digest=descriptor_digest,
+            expected_schema_digests=approved_schemas(),
+        )
+        digests.append(snapshot.financial_digest)
+        assert len(snapshot.manifest["artifacts"]) == len(artifacts)
+    assert digests[0] == digests[1]
 
 
 def test_typed_empty_snapshot_is_independently_readable(artifact_root: Path) -> None:
@@ -787,6 +1024,146 @@ def test_typed_empty_snapshot_is_independently_readable(artifact_root: Path) -> 
     assert len(snapshot.tables["build"]) == 1
 
 
+def test_execution_observations_preserve_independent_financial_identity(
+    artifact_root: Path,
+) -> None:
+    digests = []
+    for name, runtime_version, distributions in (
+        ("baseline", "3.14.0", []),
+        ("observed", "3.14.1", [{"name": "extra", "version": "2"}]),
+    ):
+        root = artifact_root / name
+        root.mkdir()
+        content = canonical_bytes(
+            {
+                "schema_version": 1,
+                "producer": {
+                    "kind": "release",
+                    "name": "jbt",
+                    "version": "0.1.0a1",
+                    "source_commit": "synthetic-commit",
+                },
+                "runtime": {
+                    "implementation": "cpython",
+                    "version": runtime_version,
+                    "platform": "synthetic",
+                    "architecture": "synthetic",
+                },
+                "distributions": distributions,
+            },
+            integer_strings=False,
+        )
+        digest = _snapshot(
+            root,
+            output_payloads=(
+                OutputPayload(
+                    "execution",
+                    "execution.json",
+                    content,
+                    hashlib.sha256(content).hexdigest(),
+                    "execution_record_schema",
+                ),
+            ),
+        )
+        snapshot = read_snapshot(
+            root,
+            descriptor_digest=digest,
+            expected_schema_digests=approved_schemas(),
+        )
+        production = read_production_snapshot(root, digest)
+        assert production.outputs["execution.json"] == content
+        assert (
+            snapshot.financial_digest == production.manifest["logical_content_digest"]
+        )
+        digests.append(snapshot.financial_digest)
+    assert digests[0] == digests[1]
+
+
+@pytest.mark.parametrize("unobserved", [None, False, True, 0, "false"])
+def test_independent_reader_rejects_removed_dirty_field(unobserved: object) -> None:
+    tables = deepcopy(load_specimen("cash").tables)
+    tables["build"][0]["is_dirty"] = unobserved
+    with pytest.raises(ReaderError, match="wrong fields: build"):
+        validate_rows(tables, tabular_schema())
+
+
+def test_independent_reader_accepts_opaque_inventory(artifact_root: Path) -> None:
+    payload = b"opaque summary, not JSON"
+    digest = _snapshot(
+        artifact_root,
+        empty=True,
+        output_payloads=(
+            OutputPayload(
+                "summary", "summary.json", payload, hashlib.sha256(payload).hexdigest()
+            ),
+        ),
+    )
+    snapshot = read_snapshot(
+        artifact_root,
+        descriptor_digest=digest,
+        expected_schema_digests=approved_schemas(),
+    )
+    assert snapshot.manifest["artifacts"][0]["path"] == "summary.json"
+
+
+def test_extra_schema_requires_independent_pin_and_does_not_change_financial_content(
+    tmp_path: Path,
+) -> None:
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"revision": {"type": "string"}},
+        "required": ["revision"],
+        "additionalProperties": False,
+    }
+    pins = {
+        **approved_schemas(),
+        "project_schema.json": hashlib.sha256(
+            canonical_bytes(schema, integer_strings=False)
+        ).hexdigest(),
+    }
+    snapshots = []
+    for index, revision in enumerate(("first", "second")):
+        root = tmp_path / f"snapshot_{index}"
+        root.mkdir()
+        payload = canonical_bytes({"revision": revision}, integer_strings=False)
+        digest = _snapshot(
+            root,
+            empty=True,
+            extra_schemas={"project_schema": schema},
+            output_payloads=(
+                OutputPayload(
+                    "project",
+                    "project.json",
+                    payload,
+                    hashlib.sha256(payload).hexdigest(),
+                    "project_schema",
+                ),
+            ),
+        )
+        with pytest.raises(ReaderError, match="unsupported schema resource inventory"):
+            read_snapshot(
+                root,
+                descriptor_digest=digest,
+                expected_schema_digests=approved_schemas(),
+            )
+        snapshots.append(
+            read_snapshot(
+                root,
+                descriptor_digest=digest,
+                expected_schema_digests=pins,
+            )
+        )
+        production = read_production_snapshot(
+            root, digest, extra_schemas={"project_schema": schema}
+        )
+        assert (
+            production.manifest["logical_content_digest"]
+            == snapshots[-1].financial_digest
+        )
+    assert snapshots[0].financial_digest == snapshots[1].financial_digest
+
+
 @pytest.mark.parametrize("case_id", INDEX_CASE_IDS)
 def test_every_indexed_snapshot_replays_hand_calculated_corpus(
     artifact_root: Path, case_id: str
@@ -797,6 +1174,8 @@ def test_every_indexed_snapshot_replays_hand_calculated_corpus(
         descriptor_digest=digest,
         expected_schema_digests=approved_schemas(),
     )
+    production = read_production_snapshot(artifact_root, digest)
+    assert production.manifest["logical_content_digest"] == snapshot.financial_digest
     case = load_case(case_id)
     entity = snapshot.tables["build"][0]["entity_id"]
     result = replay_rows(snapshot.tables, entity=entity)

@@ -54,7 +54,6 @@ def test_build_dates_are_physical_dates(
         "schema_digest": "b" * 64,
         "as_of": "2026-01-31",
         "execution_fingerprint": "c" * 64,
-        "is_dirty": False,
     }
     path = tmp_path / "build.parquet"
     write_table(path, table, [row], settings)

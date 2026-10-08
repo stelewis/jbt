@@ -135,6 +135,7 @@ def test_stored_number_admission(
         ("9" * 97, 0, None),
         ("1", 39, None),
         ("1", 0, 39),
+        ("123", 2, 1),
         ("-0", 0, None),
         ("01", 0, None),
         ("+1", 0, None),

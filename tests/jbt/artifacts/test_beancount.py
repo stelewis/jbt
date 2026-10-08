@@ -13,6 +13,61 @@ from jbt.artifacts.beancount import (
 type MutableTables = dict[str, list[dict[str, object]]]
 
 
+def test_exact_midnight_point_requires_unambiguous_order(
+    tables: MutableTables,
+    policy: BeancountPolicy,
+) -> None:
+    tables["accounts"] = [
+        {
+            "entity_id": "entity",
+            "account_id": "bank",
+            "civil_zone": "Etc/UTC",
+        }
+    ]
+    tables["assertion_scopes"] = [
+        {
+            "entity_id": "entity",
+            "scope_id": "scope",
+            "account_id": "bank",
+            "measurement": "units",
+            "scope_kind": "positions",
+        }
+    ]
+    tables["balance_assertions"] = [
+        {
+            "entity_id": "entity",
+            "assertion_set_id": "prior",
+            "scope_id": "scope",
+            "assertion_kind": "point",
+            "date": "2025-01-02",
+            "is_complete": False,
+            "timestamp_date": "2025-01-02",
+            "timestamp_local": "00:00:00",
+            "timestamp_precision": "second",
+            "timestamp_offset_minutes": 0,
+            "timestamp_fraction_digits": None,
+        }
+    ]
+    tables["balances"] = [
+        {
+            "entity_id": "entity",
+            "balance_id": "prior-value",
+            "assertion_set_id": "prior",
+            "position_id": "cash",
+            "commodity_id": "usd",
+            "amount_coefficient": "100",
+            "amount_scale": 0,
+            "amount_source_scale": 2,
+        }
+    ]
+    output = render_beancount(tables, policy=policy)
+    assert "2025-01-02 balance Assets:Bank:Cash 100 ~ 0 USD" in output
+    tables["balance_assertions"][0]["date"] = "2025-01-01"
+    tables["balance_assertions"][0]["timestamp_date"] = "2025-01-01"
+    with pytest.raises(BeancountProjectionError, match="unsupported_assertion_scope"):
+        render_beancount(tables, policy=policy)
+
+
 @pytest.fixture
 def policy() -> BeancountPolicy:
     return BeancountPolicy(

@@ -8,13 +8,13 @@ This document defines the complete pipeline: banking, investments, liabilities, 
 
 The durable asset is the input set: original evidence, authored records, declarations, rules, and corrections. Derived artifacts are disposable. Users must be able to leave with ordinary source files, readable decisions, standard ledgers, and documented tables, without a running `jbt` service.
 
-> Given the same retained input snapshot, schemas, and executable toolchain, a clean build reproduces text outputs byte for byte and tabular outputs as identical typed logical content.
+Checked replay uses the recorded immutable published release version and exact retained financial selection. It succeeds when typed financial tables, findings, content identity, and configured deterministic ledger/summary output match the pinned generation. Supported Python, platform, and compatible dependency differences are recorded, not automatic failures. This establishes reproducibility in the observed environment, not guaranteed equality for every future installation.
 
-The recovery set includes vault objects, acquisition records, authored input history, dependencies, external parser assets, and the required runtime. Digest verification detects corruption; independent backups and restore tests protect availability.
+The financial recovery set includes vault objects, acquisition records, exact authored selections, and pinned generations, including explicitly selected comparison data. Install the recorded release with ordinary `uv tool install 'jbt==<release>'`; no checkout, downstream lock, installation recipe, copied runtime, or user-side archive-hash proof is required. An unavailable release, unsupported environment, or differing result is a recovery limitation, not a reason to alter the baseline. Digest verification detects corruption; independent backups and restore tests protect financial availability.
 
 The pipeline is local, single-user, and offline during builds. It owns extraction, identity resolution, reconciliation, enrichment, linking, and economic inventory booking. Downstream analysis owns valuation, performance, tax calculations, and consolidated reporting. Bank connectivity, statutory period closing, and a general workflow service are outside the product.
 
-The product sends no telemetry, crash uploads, financial data, update checks, or other automatic phone-home traffic. Any supported network fetch is explicitly user-initiated, outside the build, with its destination and purpose visible before execution; fetched evidence or assets must be retained before use. Local analysis, diagnostics, plugins, and suggestion tools obey the same boundary; optional integrations do not imply consent to upload data.
+`jbt` sends no telemetry, crash uploads, financial data, update checks, or other automatic network traffic, and never invokes a package manager. External provisioning through `uv` may fetch Python, packages, or advisory data before application startup. External evidence acquisition has an explicit destination and purpose and retains fetched bytes before processing. Local analysis, diagnostics, and suggestion tools obey the same privacy boundary; optional integrations do not imply consent to upload data. Processing denies supported Python socket and DNS operations and checks recorded attempts before publication authorization or verification success, including caught denials. This is an application guard, not a native-code sandbox.
 
 A lifetime of records favors a sequential build with content-based reuse over distributed infrastructure. Measure rebuild time and peak memory with a realistic synthetic corpus; optimize artifact reuse without changing financial semantics.
 
@@ -220,7 +220,7 @@ Corporate actions apply to eligible inventory at their effective point. A later 
 
 ## Execution and publication
 
-Execute the declared stage graph sequentially. Reuse an artifact only when its execution fingerprint matches and its stored bytes pass integrity verification. Extraction and modelling remain separate artifacts: a rule change reuses extracts, a source change re-extracts affected inputs, and a sink-only configuration change reuses the model. A coarse producer-code fingerprint can invalidate more work safely.
+Execute the declared stage graph sequentially. Published-release runs reuse an artifact only when its execution fingerprint matches and its stored bytes pass integrity verification. Extraction and modelling remain separate artifacts: a rule change reuses extracts, a source change re-extracts affected inputs, and a sink-only configuration change reuses the model. Editable and other development producers remain usable but perform no persistent stage-cache reads or writes, regardless of worktree cleanliness; do not hash mutable source to claim stable execution identity.
 
 Every artifact envelope records its kind, schema version, producer identity, effective configuration digest, named input references, and payload. The build manifest inventories the complete generation and its checks. Runtime timings and progress messages stay in transient diagnostics rather than deterministic payloads.
 
@@ -228,12 +228,13 @@ An execution fingerprint includes:
 
 ```text
 H(stage kind and schema,
-  producer and dependency content identities,
+  published release version,
+  observed Python/platform and visible distribution names/versions,
   relevant configuration,
   named input edges with order and multiplicity)
 ```
 
-A sorted bag of digests loses input roles and may lose multiplicity. A package version alone misses changed editable code or rebuilt distributions. Include selected plugins, serializer/writer versions, external models, and any runtime data that can affect results. Coarse toolchain invalidation is acceptable initially.
+A sorted bag of digests loses input roles and may lose multiplicity. Published package name/version identifies a production producer under the immutable, once-only release policy in [ADR 0012](../adr/0012-retained-local-execution.md). Source commit is optional provenance, not another release identity or a mutable-checkout hash. Observe execution facts once at the application boundary. Normalize every visible distribution name with standard Python package-name equivalence, preserve reported versions, sort records, and reject incomplete metadata or duplicate normalized names. Even a harmless extra distribution invalidates release cache reuse. Discovery does not import packages, load plugins, hash installed files, or contact services. Selected plugins and external executable assets remain unsupported until their owning processor slice defines the boundary.
 
 Separate three values:
 
@@ -243,15 +244,17 @@ Separate three values:
 | Byte digest | Integrity of a stored file |
 | Logical content digest | Equality of a typed result independent of its container encoding |
 
-Parquet writer upgrades may change bytes without changing table contents. They still invalidate execution. Logical comparison must include schema, nulls, types, decimal semantics, declared row order, and duplicate multiplicity. Always retain byte digests for file integrity.
+Parquet writer upgrades may change bytes without changing table contents. They invalidate release cache reuse but do not automatically fail historical replay. Logical comparison must include schema, nulls, types, original decimal precision, declared row order, duplicate multiplicity, lineage, and financial provenance. Always retain byte digests for file integrity.
 
-Canonical serialization specifies map ordering, number encoding, text normalization, encoding, and line endings. Normalize comparison keys deliberately; preserve original source text and never assume all visually similar Unicode strings are equal. Source timestamps are legitimate data. Volatile build timestamps, absolute machine paths, locale, environment state, and random values are not financial inputs.
+Canonical serialization specifies map ordering, number encoding, text normalization, encoding, and line endings. Normalize comparison keys deliberately; preserve original source text and never assume all visually similar Unicode strings are equal. Source timestamps are legitimate data. Volatile build timestamps, installation paths, locale, ambient timezone, hash seed, and random values are not financial inputs or cache-identity workarounds. Use explicit UTC semantics where required, locale-independent financial parsing/formatting, and canonical ordering. Require a quiescent installation during commands and quiescent source during developer experiments; neither metadata nor a checkout commit proves resistance to same-version file tampering.
 
-Build into a private staging location. Validate artifacts, run required checks, and publish a complete generation only after success. Readers consume one generation through its manifest; they must never see a mixture of old and new tables. A failed build leaves the prior published generation unchanged and clearly reports that it is stale relative to the attempted inputs. Diagnostics from the failed attempt are not certified output.
+Build into a private staging location. Validate artifacts, run required checks, synchronize the complete generation, and install it immutably before atomically replacing the current reference. Readers pin one descriptor and never see mixed generations. Failure before reference replacement leaves the prior generation selected. Failure after replacement but before directory synchronization acknowledges durability is uncertain acknowledgement, not guaranteed rollback; the selected generation is complete. Diagnostics from a failed attempt are not certified output.
 
 Single-user does not mean simultaneous invocations are impossible. Publication and journal/acquisition writes need a narrow exclusive-writer mechanism or an explicit refusal when another writer is active. This is local integrity, not a distributed scheduler.
 
-`verify` rebuilds without trusting cached derived artifacts and compares against a specified baseline without overwriting it. Repeating the same wrong computation is not independent financial validation, so golden expectations and source checks remain necessary.
+`verify --root <root> --baseline <descriptor-digest>` first validates physical integrity, exact expected inventory, supported schemas, and retained financial selection. It requires the same published release version, never development code as a release substitute, then rebuilds without persistent cache reads or writes. Compare effective declarations, derivation semantics, typed financial rows, findings, financial-content identity, and configured ledger/summary output. Exclude build rows, operational execution facts/envelopes, recovery locations, physical Parquet digests, and mechanically dependent manifest/descriptor IDs; whole-manifest equality is not replay. Report supported environment differences and located financial mismatches. Neither success nor failure changes the baseline/current reference. Repeating the same wrong computation is not independent financial validation, so golden expectations and source checks remain necessary.
+
+`build --root <root> --project project.json` accepts an optional `--comparison-baseline <descriptor-digest>`. Absence means no comparison, not the current generation. A selected comparison generation supplies data only; do not recursively replay its earlier comparison chain.
 
 Build and booking always use the complete declared input snapshot. Account/date filters select what reports or diagnostic checks show; they cannot select a partial model for publication.
 
@@ -292,9 +295,9 @@ Use one Python package with enforced dependency direction:
 - Application orchestration calls adapters, domain operations, checks, and publication.
 - CLI commands parse input and present results; domain code never imports the CLI.
 
-The output contract exposes model concepts directly. The tabular sink does not pass through a ledger-specific intermediate. Import-contract and determinism checks run with the modules they protect. PDF/OCR dependencies remain optional, with engine/model assets included in execution fingerprints.
+The output contract exposes model concepts directly. The tabular sink does not pass through a ledger-specific intermediate. Import-contract and determinism checks run with the modules they protect. PDF/OCR and external engine/model assets require explicit execution contracts when their processor slice is implemented.
 
-Built-in and external importers share the same extraction contract and synthetic conformance tests. Python entry points in `jbt.importers` identify installed implementations; explicit source/account bindings select one unique entry point. Missing or duplicate bindings fail. A plugin receives bytes and validated context, returns typed observations, and has no mutable shared lifecycle with other plugins. Its package and dependencies are pinned in the project environment.
+The extension design uses the same extraction contract and synthetic conformance tests for built-in and external importers. Python entry points in `jbt.importers` identify installed implementations; explicit source/account bindings select one unique entry point. Missing or duplicate bindings fail. A plugin receives bytes and validated context, returns typed observations, and has no mutable shared lifecycle with other plugins. Plugin loading and executable assets remain deferred; the installed cash processor does not support them.
 
 Plugins are reviewed executable code. Source files and declaration packs cannot name arbitrary import paths or download code. The importer authoring template and testkit exercise the same contract for public and private packages; public fixtures contain synthetic data.
 
@@ -317,7 +320,7 @@ Financial policy lives in versioned inputs. Display flags change presentation on
 
 Schema versions identify contracts. Publish machine-readable schemas alongside source so changes to fields, types, keys, and constraints are reviewable. Rebuild derived artifacts under the new schema and review intentional output changes against independently calculated expectations.
 
-A change to a supported durable input schema uses an explicit conversion that preserves originals, records the mapping, and requires review for ambiguous bindings. Readers never silently upgrade inputs. Historical rebuilds use their retained input/toolchain snapshot; current builds use the current schema.
+A change to a supported durable input schema uses an explicit conversion that preserves originals, records the mapping, and requires review for ambiguous bindings. Readers never silently upgrade inputs. Historical verification uses its retained financial selection and recorded published version; current builds use the installed producer's supported schema.
 
 Backfill is not necessarily additive. An old acquisition, split, replacement statement, or corrected opening position can change later booking and every downstream output. The correct guarantee is unchanged source evidence and unaffected identities, with explainable changes to dependent results and explicit review where decision guards no longer hold.
 
@@ -325,7 +328,7 @@ Analysis consumes artifacts without importing internal Python types or reading a
 
 One project records one natural or legal person and builds independently. Household and filing-group reports combine those records downstream. Joint accounts, beneficial attribution, and consolidation use explicit correspondence and authority. [Project topology](./project-topology.md) owns deployment and sharing.
 
-Rebuilding restates affected history. Retain the complete input/toolchain snapshot and report used for a filing; statutory closing and amendment workflows operate downstream.
+Rebuilding restates affected history. Retain the exact financial selection, producer/runtime provenance, pinned generation, and report used for a filing; statutory closing and amendment workflows operate downstream. Demonstrated archival obligations requiring exact historical dependencies trigger a separate design review rather than an unimplemented promise of strict reconstruction.
 
 ## Contract validation
 

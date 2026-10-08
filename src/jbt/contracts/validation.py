@@ -16,7 +16,6 @@ from jbt.domain.identity import (
     AuthoredAnchor,
     Occurrence,
     child_id,
-    declaration_id,
     event_id,
     revision_id,
     successor_lot_id,
@@ -465,11 +464,7 @@ def _positions_and_lineage(tables: Tables, indexes: dict) -> None:
         require(
             declaration["declaration_kind"] == "position"
             and row["position_id"]
-            == declaration_id(
-                EntityId(row["entity_id"]),
-                RecordKind.POSITION,
-                SemanticKey(declaration["declaration_key"]),
-            ).value,
+            == decode_declaration(declaration["payload_json"])["position_id"],
             "position_identity",
             "positions",
         )
@@ -498,11 +493,7 @@ def _positions_and_lineage(tables: Tables, indexes: dict) -> None:
         require(
             declaration["declaration_kind"] == "pool"
             and row["pool_id"]
-            == declaration_id(
-                EntityId(row["entity_id"]),
-                RecordKind.POOL,
-                SemanticKey(declaration["declaration_key"]),
-            ).value,
+            == decode_declaration(declaration["payload_json"])["pool_id"],
             "pool_identity",
             "inventory_pools",
         )

@@ -30,7 +30,9 @@ Adding support extends that decision while retaining its canonical anchor. Fact 
 
 Active identity decisions form disjoint occurrence/key sets with one canonical anchor/key each. One source record can support several distinct economic components, but the same component cannot be assigned twice. Retired-to-surviving references are acyclic and informational: readers and corrections do not silently follow them. Retired IDs remain addressable in the identity history; applying a correction still requires an active, unique, guard-valid target under [ADR 0001](0001-correction-identity.md). Builds fail on contradictory membership, missing anchors, cycles, or unreviewed affected decisions.
 
-Leg IDs derive from the canonical event and a stable semantic leg key. A source discriminator distinguishes repeated roles; generated child keys derive from the parent and an explicit rule/correction output key. Neither serialization indexes nor matched-lot order identify legs. Lot roots derive from the canonical acquisition/opening leg and its stable origin key; successor branches additionally name the determining event and output role. Changes to these discriminants require explicit identity review. Position and pool IDs use stable declaration keys, not revision IDs, changing account labels, or policy payload hashes.
+Leg IDs derive from the canonical event and a stable semantic leg key. A source discriminator distinguishes repeated roles; generated child keys derive from the parent and an explicit rule/correction output key. Neither serialization indexes nor matched-lot order identify legs. Lot roots derive from the canonical acquisition/opening leg and its stable origin key; successor branches additionally name the determining event and output role. Changes to these discriminants require explicit identity review.
+
+Position and pool IDs are explicitly authored stable identifiers. Their published rows must name the same ID as their owning declaration payload. Renaming a declaration key or display label does not re-identify the holding or pool; changing the declared ID is an explicit identity change, not an automatic consequence of hashing revised content. Authors can refer to these IDs without precomputing generated model values. Event, leg, and lot identities retain their canonical derivation rules.
 
 ## Consequences
 
@@ -53,6 +55,10 @@ A better statement should improve facts without replacing acquisitions and corre
 ### Automatically redirect retired IDs
 
 This hides a change to the object a person reviewed.
+
+### Require authors to precompute position and pool hashes
+
+This makes ordinary declarations depend on generated identifiers before their references can be authored. Explicit declared IDs provide the same stable referential boundary without coupling authoring to the identity encoder or treating declaration-key changes as holding changes.
 
 ## Related
 

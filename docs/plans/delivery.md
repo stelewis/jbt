@@ -5,41 +5,24 @@ date_created: 2026-08-19
 
 # Delivery Plan
 
-Implement the full system defined by [target architecture](../design/target-architecture.md), [the analytical contract](../design/analysis-boundary.md), and the ADRs. Step 0 established the shared representation; the following stages implement and verify processors against it, revising the contract when evidence shows it is wrong.
+Implement the full system, building on the [implemented architecture](../developer/architecture.md). The [target architecture](../design/target-architecture.md) and [analytical contract](../design/analysis-boundary.md) define the full system; [acceptance cases](../design/acceptance.md) define expected behavior.
 
 ## Design now, implement in stages
 
-Design shared identities and invariants against the intended capability set, then implement processors in slices. A cash pipeline cannot prove multi-origin basis transfers; establish each slice's expected results independently before implementing it. Follow the [contract-first testing workflow](../developer/standards/tests.md#contract-first-slices): representability and boundary feasibility do not prove processor correctness. This plan owns implementation order; [acceptance cases](../design/acceptance.md) own expected behavior.
-
-## 0. Establish and exercise the full contract
-
-Step 0 established exact values and identities, versioned schemas, complete static artifacts, real numeric/Parquet/Beancount boundary checks, hand-calculated cross-domain fixtures, and independent replay. See the [implemented contract foundations](../developer/architecture.md), [conformance workflow](../developer/tools/local-workflows.md#contract-conformance), and [coverage index](../../tests/integration/conformance/fixtures/index.json) for evidence and later processor ownership.
-
-These hand-authored results prove representability and boundary feasibility, not extraction, booking, action processing, or durable publication. Schema version 1 is a working baseline, not a compatibility promise or an approval mechanism for the ultimate design: when a processor exposes a missing fact or flawed representation, revise the owning contract and independent expectations together instead of preserving the seed through a shim. Do not retain a bad shape for inputs that are not supported as durable external contracts.  A snapshot digest identifies its contents; it does not certify that the design is right.
+Design shared identities and invariants against the intended capability set, then implement processors in slices.
 
 ## Gate for each processor slice
 
-Before implementing a processor, extend the conformance fixtures with its positive, negative, and boundary cases and resolve the expected transformations under the [contract-first workflow](../developer/standards/tests.md#contract-first-slices). A missing field, ambiguous policy, or impossible independent reconstruction blocks that slice until the owning contract is repaired, not until a workaround preserves the shared contract.
+Before implementing a processor, extend the conformance fixtures with its positive, negative, and boundary cases and resolve the expected transformations under the [contract-first workflow](../developer/standards/tests.md#contract-first-slices). If evidence exposes a missing fact or flawed representation, revise the owning contract and independent expectations together rather than preserving it through a shim.
 
-The slice exits only when its processor produces those results through the real model and configured outputs. Reuse the conformance fixtures as end-to-end expectations; do not replace them with self-generated snapshots. Unimplemented families remain explicitly unsupported by that runtime even though their representation passed the conformance checks.
-
-## 1. Build the reproducible execution path
-
-Start from the values and schemas exercised by the conformance suite. Implement versioned envelopes, retained input snapshots, and execution/content identities. Enforce dependency direction and guard against undeclared runtime inputs.
-
-Add non-destructive acquisition, immutable objects, accession/binding records, and recoverable writes. Execute the fixed stage dependencies sequentially, using integrity-checked artifacts for content-based reuse. Add staged publication and uncached verification against an unchanged baseline.
-
-Use one synthetic OFX cash statement to exercise acquisition through model, checks, Beancount, Parquet, and summary. Keep its records in the shared schema, not a cash-only shape.
-
-**Exit:** opening 100.00, credit 20.00, debit 5.00, and closing 115.00 agree in independently read outputs. Removing the debit after extraction fails model reconciliation. Identical retained inputs reproduce outputs; interrupted acquisition preserves evidence; failed publication preserves the previous complete generation.
+A slice exits when its processor produces those expected results through the real model and configured outputs. Reuse conformance fixtures as end-to-end expectations, not self-generated snapshots. Representation proof does not certify an unimplemented processor; unsupported families must fail explicitly.
 
 ## 2. Complete ingestion and the correction workflow
 
-Implement overlapping-source authority, revisions, pending/posted states, multi-account files, account and instrument aliases, lifecycle, coverage, and authored records. Add exact decimal/time boundary cases and explicitly bound importers.
-
-Add the rule engine, typed field policies, guarded correction journal, rendered-ID correction workflow, and replayable lineage. Implement internal cash-transfer and evidence links. Expose review status and uncategorized work in the summary.
-
-Exercise a synthetic external importer in the locked environment. Validate unique entry-point resolution, conformance, and refusal of missing or changed executable dependencies before exposing that interface publicly.
+- Resolve overlapping-source authority, revisions, pending/posted states, multi-account files, account and instrument aliases, account and event lifecycle, coverage, and authored records.
+- Extend rules beyond category assignment, with complete evaluation and typed field policies. Add the guarded correction journal, rendered-ID correction workflow, and replayable lineage.
+- Implement internal cash-transfer and evidence links. Extend summary review status and uncategorized-work reporting to these workflows.
+- Add exact decimal/time boundary cases and bound each importer. Exercise a synthetic external importer in a provisioned environment; require unique entry-point resolution, conformance, and supported installed producer provenance before exposing the interface publicly.
 
 **Exit:** repeated evidence does not duplicate events; distinct identical purchases remain distinct; revised sources and changed correction targets produce the required review. Source and model checks run independently. Coverage uses the recorded horizon. Users can fix an output through its ID without editing generated files.
 
@@ -83,4 +66,4 @@ For every stage, run the relevant repository quality gates plus schema, independ
 
 Exercise restoration, corrupt/missing inputs, concurrent writers, interrupted publication, and producer changes throughout development. Before a release, restore the synthetic multi-year corpus using only its recovery set and measure rebuild time and peak memory. Performance improvements preserve the same financial results and complete-snapshot publication.
 
-Supported durable input changes use explicit, reviewed conversion. Derived data is rebuilt. Historical reproduction uses the historical input/toolchain snapshot; current correctness uses the current contract and expected results.
+Supported durable input changes use explicit, reviewed conversion; rebuild derived data. Keep current-correctness tests separate from historical replay, with independently calculated expectations for the current contract.

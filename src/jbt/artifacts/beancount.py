@@ -9,7 +9,7 @@ posting prices, intraday/complete assertions, and differing effective
 posting dates fail.
 Numbers and conservative accumulation bounds must fit 28 decimal digits.
 No tolerance, padding, inferred amount, or implicit lot selection repairs
-an unrepresentable projection. Beancount is a test-only dependency.
+an unrepresentable projection.
 """
 
 # Structured exception arguments are stable codes, not message formatting.
@@ -744,12 +744,13 @@ class _Projection:
         for assertion in self.rows("balance_assertions"):
             identity = _string(assertion, "assertion_set_id")
             scope = scopes[_string(assertion, "scope_id")]
+            midnight = self.midnight_point(assertion, scope)
             if (
-                assertion["assertion_kind"] == "point"
+                (assertion["assertion_kind"] == "point" and not midnight)
                 or assertion["is_complete"]
                 or scope["measurement"] != "units"
                 or scope["scope_kind"] != "positions"
-                or assertion.get("timestamp_local") is not None
+                or (assertion.get("timestamp_local") is not None and not midnight)
             ):
                 raise BeancountProjectionError("unsupported_assertion_scope", identity)
             when = _date(assertion, "date")
@@ -786,6 +787,35 @@ class _Projection:
                     )
                 )
         return directives
+
+    def midnight_point(self, assertion: Row, scope: Row) -> bool:
+        """Project an exact UTC point only without same-day ordering ambiguity."""
+        if (
+            assertion["assertion_kind"] != "point"
+            or assertion.get("timestamp_local") != "00:00:00"
+            or assertion.get("timestamp_offset_minutes") != 0
+            or assertion.get("timestamp_precision") != "second"
+            or assertion.get("timestamp_fraction_digits") is not None
+            or assertion.get("timestamp_date") != assertion["date"]
+        ):
+            return False
+        accounts = self.index("accounts", "account_id")
+        account = accounts.get(_string(scope, "account_id"))
+        if account is None or account.get("civil_zone") != "Etc/UTC":
+            return False
+        when = _date(assertion, "date")
+        identity = _string(assertion, "assertion_set_id")
+        positions = {
+            balance["position_id"]
+            for balance in self.related("balances", "assertion_set_id", identity)
+        }
+        transactions = self.index("transactions", "txn_id")
+        return not any(
+            self.effective_date(transactions[_string(posting, "txn_id")], posting)
+            == when
+            for posting in self.rows("postings")
+            if posting["position_id"] in positions
+        )
 
     def prices(self) -> list[tuple[date, str, list[str]]]:
         directives = []

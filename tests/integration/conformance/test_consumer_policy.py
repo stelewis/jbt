@@ -45,9 +45,13 @@ from tests.integration.conformance.consumer_policy import (
     select_price,
     verify_handoff,
 )
-from tests.integration.conformance.corpus import FixtureCase, load_case
+from tests.integration.conformance.corpus import (
+    FixtureCase,
+    approved_schemas,
+    load_case,
+)
 from tests.integration.conformance.reader import read_snapshot
-from tests.integration.conformance.test_reader import _snapshot, approved_schemas
+from tests.integration.conformance.test_reader import _snapshot
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

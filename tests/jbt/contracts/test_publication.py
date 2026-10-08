@@ -25,7 +25,6 @@ def empty_manifest() -> tuple[dict, dict]:
         "schema_digest": "0" * 64,
         "as_of": "2026-01-01",
         "execution_fingerprint": "1" * 64,
-        "is_dirty": False,
     }
     tables = {table.name: [] for table in catalog()}
     tables["build"] = [{**entity, "manifest_digest": "2" * 64}]
@@ -54,6 +53,10 @@ def empty_manifest() -> tuple[dict, dict]:
         "artifacts": [],
         "registries": [],
         "configuration": {"path": "config.json", "byte_digest": "6" * 64},
+        "derivation_definitions": {
+            "path": "derivations.json",
+            "byte_digest": "a" * 64,
+        },
         "effective_declarations": [],
         "bindings": [],
         "recovery_set": {
@@ -116,6 +119,7 @@ def test_complete_manifest_has_no_checksum_cycle(
                 *manifest["tables"],
                 *manifest["schemas"],
                 manifest["configuration"],
+                manifest["derivation_definitions"],
             ]
         ]
         + [{"path": "build.parquet", "byte_digest": "9" * 64}],
@@ -126,6 +130,18 @@ def test_complete_manifest_has_no_checksum_cycle(
         validate_descriptor(descriptor, manifest)
 
 
+@pytest.mark.parametrize("value", [None, True, False, 0, "false"])
+def test_manifest_rejects_removed_dirty_field(
+    empty_manifest: tuple[dict, dict],
+    value: object,
+) -> None:
+    manifest, tables = empty_manifest
+    manifest["entities"][0]["is_dirty"] = value
+    tables["build"][0]["is_dirty"] = value
+    with pytest.raises(ValueError, match="manifest_schema"):
+        validate_manifest(manifest, tables)
+
+
 def test_manifest_rejects_unknown_fields_and_uninventoried_tables(
     empty_manifest: tuple[dict, dict],
 ) -> None:
@@ -134,6 +150,34 @@ def test_manifest_rejects_unknown_fields_and_uninventoried_tables(
         validate_manifest({**manifest, "extras": {}}, tables)
     manifest["tables"].pop()
     with pytest.raises(ValueError, match="manifest_table_inventory"):
+        validate_manifest(manifest, tables)
+
+
+def test_manifest_allows_execution_observation_without_copied_runtime(
+    empty_manifest: tuple[dict, dict],
+) -> None:
+    manifest, tables = empty_manifest
+    manifest["recovery_set"]["runtime"] = []
+    manifest["schemas"].append(
+        {
+            "schema_id": "execution_record_schema",
+            "schema_version": 1,
+            "path": "execution_record_schema.json",
+            "byte_digest": "a" * 64,
+        }
+    )
+    manifest["artifacts"].append(
+        {
+            "kind": "execution",
+            "path": "execution.json",
+            "byte_digest": "b" * 64,
+            "logical_digest": "b" * 64,
+            "schema_id": "execution_record_schema",
+        }
+    )
+    validate_manifest(manifest, tables)
+    manifest["artifacts"][0]["schema_id"] = None
+    with pytest.raises(ValueError, match="manifest_schema"):
         validate_manifest(manifest, tables)
 
 

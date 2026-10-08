@@ -26,6 +26,7 @@ from jbt.contracts.primitives import (
         ),
         ({"coefficient": "1", "scale": 39, "source_scale": None}, "decimal_scale"),
         ({"coefficient": "1", "scale": 0, "source_scale": 39}, "decimal_source_scale"),
+        ({"coefficient": "123", "scale": 2, "source_scale": 1}, "decimal_source_scale"),
         (
             {"coefficient": "0", "scale": 1, "source_scale": None},
             "decimal_normalization",

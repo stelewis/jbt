@@ -808,7 +808,12 @@ def _publication_definitions() -> dict:
     defs.update(
         {
             "EntityRef": _shape("entity_id:ID target:RecordRef"),
-            "InputRef": _shape("role:ID ordinal:I kind:ID digest:Digest"),
+            "InputRef": _object(
+                {
+                    **_fields("role:ID kind:ID digest:Digest"),
+                    "ordinal": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+                }
+            ),
             "File": _shape("path:Path byte_digest:Digest"),
             "CheckValue": {
                 "oneOf": [
@@ -886,7 +891,6 @@ def _publication_definitions() -> dict:
                             "runtime_id:ID version:ID platform:ID "
                             "path:Path byte_digest:Digest"
                         ),
-                        minimum=1,
                     ),
                 }
             ),
@@ -928,7 +932,7 @@ def manifest_schema() -> dict:
                     _shape(
                         "entity_id:ID producer_version:ID schema_version:I "
                         "schema_digest:Digest "
-                        "as_of:D execution_fingerprint:Digest is_dirty:B"
+                        "as_of:D execution_fingerprint:Digest"
                     ),
                     minimum=1,
                 ),
@@ -939,15 +943,25 @@ def manifest_schema() -> dict:
                     )
                 ),
                 "artifacts": _array(
-                    _shape(
-                        "kind:extract/model/checks/ledger/summary/evidence "
-                        "path:Path byte_digest:Digest "
-                        "logical_digest:Digest schema_id:ID?"
-                    )
+                    {
+                        **_shape(
+                            "kind:extract/model/checks/ledger/summary/evidence/"
+                            "inputs/envelope/project/execution "
+                            "path:Path byte_digest:Digest "
+                            "logical_digest:Digest schema_id:ID?"
+                        ),
+                        "if": {"properties": {"kind": {"const": "execution"}}},
+                        "then": {
+                            "properties": {
+                                "schema_id": {"const": "execution_record_schema"}
+                            }
+                        },
+                    }
                 ),
                 "schemas": _array(_ref("SchemaResource"), minimum=1),
                 "registries": _array(_ref("RegistryResource")),
                 "configuration": _shape("path:Path byte_digest:Digest"),
+                "derivation_definitions": _shape("path:Path byte_digest:Digest"),
                 "effective_declarations": _array(
                     _shape("entity_id:ID declaration_id:ID")
                 ),
@@ -980,6 +994,156 @@ def manifest_schema() -> dict:
     }
 
 
+def derivation_definitions_schema() -> dict:
+    """Describe retained semantic rules independently of the runtime."""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": _common_definitions(),
+        **_object(
+            {
+                "schema_version": {"const": 1},
+                "definitions": {
+                    "type": "object",
+                    "propertyNames": _ref("ID"),
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {"version": _ref("I")},
+                        "required": ["version"],
+                        "additionalProperties": {"type": "string", "minLength": 1},
+                        "minProperties": 2,
+                    },
+                },
+            }
+        ),
+    }
+
+
+def _artifact_array(item: dict) -> dict:
+    return {"type": "array", "items": item}
+
+
+def checks_artifact_schema() -> dict:
+    """Describe the published execution-check document."""
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": _publication_definitions(),
+        **_object(
+            {
+                "schema_version": {"const": 1},
+                "checks": _artifact_array(_ref("Check")),
+            }
+        ),
+    }
+
+
+def _artifact_column_schema(column: dict) -> dict:
+    kind = column["kind"]
+    if kind == "list":
+        definition = _artifact_array({"type": "string"})
+    elif kind == "date":
+        definition = {"type": "string", "format": "date"}
+    else:
+        definition = {"type": kind}
+    if "enum" in column:
+        definition["enum"] = column["enum"]
+    return _nullable(definition) if column["nullable"] else definition
+
+
+def model_artifact_schema() -> dict:
+    """Describe the complete shared-table execution model wrapper."""
+    tables = {
+        table["name"]: _artifact_array(
+            _object(
+                {
+                    column["name"]: _artifact_column_schema(column)
+                    for column in table["columns"]
+                }
+            )
+        )
+        for table in tabular_schema()["tables"]
+        if table["name"] != "build"
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": _publication_definitions(),
+        **_object(
+            {
+                "schema_version": {"const": 1},
+                "tables": _object(tables),
+                "checks": _artifact_array(_ref("Check")),
+                "derivations": {
+                    **_artifact_array(_ref("ID")),
+                    "uniqueItems": True,
+                },
+            }
+        ),
+    }
+
+
+def summary_artifact_schema() -> dict:
+    """Describe the published summary sink document."""
+    number = _ref("N")
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": _publication_definitions(),
+        **_object(
+            {
+                "schema_version": {"const": 1},
+                "entity_id": _ref("ID"),
+                "as_of": _ref("D"),
+                "comparison_baseline": _nullable(_ref("Digest")),
+                "monthly_quantities": _artifact_array(
+                    _object(
+                        {
+                            "month": {
+                                "type": "string",
+                                "pattern": r"^\d{4}-\d{2}$",
+                            },
+                            "account_id": _ref("ID"),
+                            "position_id": _ref("ID"),
+                            "commodity_id": _ref("ID"),
+                            "opening": number,
+                            "credits": number,
+                            "debits": number,
+                            "closing": number,
+                        }
+                    )
+                ),
+                "category_flows": _artifact_array(
+                    _object(
+                        {
+                            "month": {
+                                "type": "string",
+                                "pattern": r"^\d{4}-\d{2}$",
+                            },
+                            "category_id": _ref("ID"),
+                            "commodity_id": _ref("ID"),
+                            "amount": number,
+                        }
+                    )
+                ),
+                "changes": _artifact_array(
+                    _object(
+                        {
+                            "position_id": _ref("ID"),
+                            "before": _nullable(number),
+                            "after": number,
+                            "change": _nullable(number),
+                        }
+                    )
+                ),
+                "review": _object(
+                    {
+                        "unreviewed_events": _ref("I"),
+                        "uncategorized_events": _ref("I"),
+                    }
+                ),
+                "checks": _artifact_array(_ref("Check")),
+            }
+        ),
+    }
+
+
 def descriptor_schema() -> dict:
     """Return the terminal checksum inventory with no self-checksum edge."""
     return {
@@ -996,6 +1160,34 @@ def descriptor_schema() -> dict:
     }
 
 
+def execution_record_schema() -> dict:
+    """Describe observed execution facts, not a restorable environment."""
+    string = {"type": "string"}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        **_object(
+            {
+                "schema_version": {"type": "integer", "const": 1},
+                "producer": _object(
+                    {
+                        "kind": _enum("release/development"),
+                        "name": {"const": "jbt"},
+                        "version": string,
+                        "source_commit": _nullable(string),
+                    }
+                ),
+                "runtime": _object(
+                    dict.fromkeys(
+                        ("implementation", "version", "platform", "architecture"),
+                        string,
+                    )
+                ),
+                "distributions": _array(_object({"name": string, "version": string})),
+            }
+        ),
+    }
+
+
 def envelope_schema() -> dict:
     """Return named, ordered input edges and explicitly typed artifact payloads."""
     defs = _publication_definitions()
@@ -1005,8 +1197,9 @@ def envelope_schema() -> dict:
         **_object(
             {
                 "schema_version": {"const": 1},
-                "kind": _enum("extract/model/checks/ledger/tabular"),
+                "kind": _enum("extract/model/checks/ledger/summary/tabular"),
                 "producer": _shape("name:ID version:ID content_digest:Digest"),
+                "execution_digest": _ref("Digest"),
                 "configuration_digest": _ref("Digest"),
                 "inputs": _array(_ref("InputRef")),
                 "payload": _shape(
@@ -1017,14 +1210,28 @@ def envelope_schema() -> dict:
     }
 
 
-def validate_document(document: object, schema: dict) -> None:
-    """Validate without remote schema retrieval or implicit coercion."""
-    _validator(json.dumps(schema, sort_keys=True)).validate(document)
+def validate_document(
+    document: object, schema: dict, *, reference_scope: dict | None = None
+) -> None:
+    """Validate locally with an optional enclosing reference scope."""
+    encoded = json.dumps(schema, sort_keys=True)
+    if reference_scope is None:
+        validator = _validator(encoded)
+    else:
+        root = _validator(json.dumps(reference_scope, sort_keys=True))
+        validator = root.evolve(schema=_checked_schema(encoded))
+    validator.validate(document)
     validate_json_values(document, "document")
 
 
 @lru_cache(maxsize=16)
 def _validator(encoded_schema: str) -> Validator:
+    return Draft202012Validator(
+        _checked_schema(encoded_schema), format_checker=FormatChecker()
+    )
+
+
+def _checked_schema(encoded_schema: str) -> dict:
     schema = json.loads(encoded_schema)
 
     def local_references(value: object) -> None:
@@ -1044,4 +1251,4 @@ def _validator(encoded_schema: str) -> Validator:
 
     local_references(schema)
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, format_checker=FormatChecker())
+    return schema

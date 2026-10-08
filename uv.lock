@@ -245,6 +245,7 @@ name = "jbt"
 version = "0.1.0a1"
 source = { editable = "." }
 dependencies = [
+    { name = "beancount" },
     { name = "jsonschema" },
     { name = "pyarrow" },
 ]
@@ -252,7 +253,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
-    { name = "beancount" },
     { name = "commitizen" },
     { name = "duckdb" },
     { name = "numpy" },
@@ -266,6 +266,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beancount", specifier = ">=3.2.3" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "pyarrow", specifier = ">=25.0.1" },
 ]
@@ -273,7 +274,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit", specifier = ">=1.9.4" },
-    { name = "beancount", specifier = ">=3.2.3" },
     { name = "commitizen", specifier = ">=4.19.0" },
     { name = "duckdb", specifier = ">=1.5.6" },
     { name = "numpy", specifier = ">=2.5.3" },

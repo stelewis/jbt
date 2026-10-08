@@ -102,8 +102,12 @@ jobs:
 
   tests:
     name: Tests (pytest)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -119,74 +123,19 @@ jobs:
       - name: Run tests
         run: uv run --locked pytest -q
 
-  package:
-    name: Package distributions
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Setup Python + uv + deps
-        uses: ./.github/actions/setup-python-uv
-
       - name: Build distributions
         run: uv build --no-sources
 
-      - name: Exercise packaged contract resources and writer
+      - name: Check distribution metadata and package payloads
+        run: uv run --locked python .github/scripts/check_release.py --distributions dist
+
+      - name: Exercise installed release CLI and checked replay
         run: |
-          uv run --locked python -I - <<'PY'
-          import sys
-          import tarfile
-          import tempfile
-          import zipfile
-          from pathlib import Path
-
-          wheel, = Path("dist").glob("*.whl")
-          sdist, = Path("dist").glob("*.tar.gz")
-          sys.path.insert(0, str(wheel.resolve()))
-          from jbt.artifacts.parquet import Compression, WriterSettings, write_table
-          from jbt.contracts import catalog
-
-          assert str(wheel.resolve()) in catalog.__file__
-          with zipfile.ZipFile(wheel) as archive, tarfile.open(sdist) as source:
-              for name in ("catalog.json", "catalog.schema.json", "checks.json"):
-                  member, = (
-                      item for item in source.getmembers()
-                      if item.name.endswith(f"/src/jbt/contracts/resources/{name}")
-                  )
-                  stream = source.extractfile(member)
-                  assert stream is not None
-                  assert stream.read() == archive.read(f"jbt/contracts/resources/{name}")
-          settings = WriterSettings(
-              compression=Compression.ZSTD, row_group_size=100,
-              dictionary=False, statistics=True,
-          )
-          with tempfile.TemporaryDirectory() as directory:
-              for table in catalog.catalog():
-                  path = Path(directory) / f"{table.name}.parquet"
-                  write_table(path, table, [], settings)
-                  assert path.read_bytes()[:4] == b"PAR1"
-          PY
-
-  integration-tests:
-    name: Integration tests (pytest)
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Setup Python + uv + deps
-        uses: ./.github/actions/setup-python-uv
-
-      - name: Run integration tests
-        run: uv run --locked pytest -q -m integration
+          wheels=(dist/*.whl)
+          test "${#wheels[@]}" -eq 1
+          wheel="${wheels[0]}"
+          test -f "$wheel"
+          uv run --locked pytest -q -m e2e --release-wheel "$wheel"
 
   security:
     name: Security checks

@@ -11,7 +11,23 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+from tests.integration.conformance.reader import canonical_bytes
+
 from jbt.contracts.catalog import Table, catalog, tabular_schema
+from jbt.contracts.schemas import (
+    checks_artifact_schema,
+    configuration_schema,
+    declaration_schema,
+    derivation_definitions_schema,
+    descriptor_schema,
+    envelope_schema,
+    execution_record_schema,
+    extraction_schema,
+    manifest_schema,
+    model_artifact_schema,
+    registry_schema,
+    summary_artifact_schema,
+)
 from jbt.domain.identity import (
     AcquiredAnchor,
     Occurrence,
@@ -26,6 +42,31 @@ from jbt.domain.ids import EntityId, RecordId, RecordKind, SemanticKey
 FIXTURES = Path(__file__).parent / "fixtures"
 ROUNDING = {"scale": 2, "mode": "half_even", "residual": "final_slice"}
 DATE_ROLES = ("authorized", "traded", "posted", "settled", "value")
+
+
+def approved_schemas() -> dict[str, str]:
+    """Pin approved schema bytes independently of a snapshot's claims."""
+    documents = {
+        "tabular_schema": tabular_schema(),
+        "configuration_schema": configuration_schema(),
+        "declaration_schema": declaration_schema(),
+        "derivation_definitions_schema": derivation_definitions_schema(),
+        "descriptor_schema": descriptor_schema(),
+        "extraction_schema": extraction_schema(),
+        "envelope_schema": envelope_schema(),
+        "execution_record_schema": execution_record_schema(),
+        "manifest_schema": manifest_schema(),
+        "registry_schema": registry_schema(),
+        "checks_artifact_schema": checks_artifact_schema(),
+        "model_artifact_schema": model_artifact_schema(),
+        "summary_artifact_schema": summary_artifact_schema(),
+    }
+    return {
+        name + ".json": sha256(
+            canonical_bytes(document, integer_strings=False)
+        ).hexdigest()
+        for name, document in documents.items()
+    }
 
 
 @dataclass(frozen=True)
@@ -549,7 +590,6 @@ class _Bundle:
             schema_digest=sha256(_json(tabular_schema()).encode()).hexdigest(),
             as_of="2026-12-31",
             execution_fingerprint=sha256(b"fixture-expansion-v1").hexdigest(),
-            is_dirty=False,
         )
         for table, rows in self.spec.get("rows", {}).items():
             for row in rows:

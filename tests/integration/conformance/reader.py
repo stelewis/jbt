@@ -39,6 +39,12 @@ SCHEMA_FILES = frozenset(
         "configuration_schema",
         "registry_schema",
         "extraction_schema",
+        "derivation_definitions_schema",
+        "envelope_schema",
+        "execution_record_schema",
+        "checks_artifact_schema",
+        "model_artifact_schema",
+        "summary_artifact_schema",
     )
 )
 
@@ -507,9 +513,30 @@ class AssertionResult:
     observed: dict[str, Fraction]
 
 
+def _utc_midnight_point(
+    assertion: Row, account: Row, tables: Tables, entity: str
+) -> bool:
+    return (
+        account["civil_zone"] == "Etc/UTC"
+        and assertion["timestamp_date"] == assertion["date"]
+        and assertion["timestamp_local"] == "00:00:00"
+        and assertion["timestamp_offset_minutes"] == 0
+        and assertion["timestamp_zone"] in {None, "UTC", "Etc/UTC", "GMT"}
+        and assertion["timestamp_precision"] == "second"
+        and assertion["timestamp_fraction_digits"] is None
+        and all(
+            row["timestamp_precision"] in {None, "date"}
+            for name in ("event_times", "book_steps")
+            for row in tables.get(name, [])
+            if row["entity_id"] == entity
+        )
+    )
+
+
 def check_assertions(
     tables: Tables, *, entity: str, date_roles: Mapping[str, str]
 ) -> tuple[AssertionResult, ...]:
+    accounts = _index(tables, "accounts", "account_id", entity)
     scopes = _index(tables, "assertion_scopes", "scope_id", entity)
     positions = _index(tables, "positions", "position_id", entity)
     answers = []
@@ -518,7 +545,20 @@ def check_assertions(
             continue
         identity = assertion["assertion_set_id"]
         scope = scopes[assertion["scope_id"]]
-        if scope["measurement"] != "units" or scope["coverage_basis"] not in date_roles:
+        account = accounts[scope["account_id"]]
+        coverage_start = account["coverage_start_date"]
+        if (
+            (
+                coverage_start is not None
+                and _date(assertion["date"]) < _date(coverage_start)
+            )
+            or scope["measurement"] != "units"
+            or scope["coverage_basis"] not in date_roles
+            or (
+                assertion["assertion_kind"] == "point"
+                and not _utc_midnight_point(assertion, account, tables, entity)
+            )
+        ):
             answers.append(AssertionResult(entity, identity, "not_evaluable", {}, {}))
             continue
         selected = {
@@ -532,7 +572,7 @@ def check_assertions(
             entity=entity,
             date_role=date_roles[scope["coverage_basis"]],
             cutoff=_date(assertion["date"]),
-            opening=assertion["assertion_kind"] == "opening",
+            opening=assertion["assertion_kind"] in {"opening", "point"},
         )
         observed: dict[str, Fraction] = {}
         for key, position in selected.items():
@@ -697,6 +737,7 @@ def validate_rows(
         _validate_action_applications(tables, entity=entity)
     for declaration in tables["declarations"]:
         _validate_declaration_revision(declaration)
+    _validate_position_identities(tables)
     _validate_record_references(tables, specifications)
     _require_field_evidence(tables, specifications)
 
@@ -730,6 +771,27 @@ def _validate_declaration_revision(row: Row) -> None:
         row["declaration_id"] == digest and row["revision_digest"] == digest,
         "declaration revision identity mismatch",
     )
+
+
+def _validate_position_identities(tables: Tables) -> None:
+    declarations = {
+        (row["entity_id"], row["declaration_id"]): row for row in tables["declarations"]
+    }
+    for table, kind, identity_field in (
+        ("positions", "position", "position_id"),
+        ("inventory_pools", "pool", "pool_id"),
+    ):
+        for row in tables[table]:
+            declaration = declarations.get((row["entity_id"], row["declaration_id"]))
+            _require(
+                declaration is not None
+                and declaration["declaration_kind"] == kind
+                and row[identity_field]
+                == _json(declaration["payload_json"].encode("utf-8")).get(
+                    identity_field
+                ),
+                f"{kind} identity must match declared {identity_field}",
+            )
 
 
 def _validate_action_applications(tables: Tables, *, entity: str) -> None:
@@ -1196,7 +1258,11 @@ def _json(payload: bytes) -> Row:
 
 def _pinned_file(root: Path, name: str, digest: str) -> bytes:
     _require(
-        re.fullmatch(r"[a-z][a-z0-9_]*\.(json|parquet)", name) is not None,
+        re.fullmatch(
+            r"[a-z][a-z0-9_-]*(?:\.(json|parquet|beancount|ledger|txt))?",
+            name,
+        )
+        is not None,
         "unsafe artifact filename",
     )
     _require(re.fullmatch(r"[0-9a-f]{64}", digest) is not None, "invalid digest")
@@ -1240,7 +1306,16 @@ def validate_json(document: object, schema: Row) -> None:
         raise ReaderError(message) from error
 
 
-def _wire_integers(value: object, node: Row, schema: Row) -> object:
+def _wire_integers(  # noqa: C901 - typed alternatives and tuple schemas
+    value: object, node: object, schema: Row
+) -> object:
+    if node is False:
+        message = "wire value rejected by schema"
+        raise ReaderError(message)
+    if node is True:
+        return value
+    _require(isinstance(node, dict), "invalid schema node")
+    assert isinstance(node, dict)
     if "$ref" in node:
         target = schema
         for segment in node["$ref"].removeprefix("#/").split("/"):
@@ -1274,6 +1349,17 @@ def _wire_integers(value: object, node: Row, schema: Row) -> object:
             for key, item in value.items()
         }
     if isinstance(value, list):
+        if "prefixItems" in node:
+            return [
+                _wire_integers(
+                    item,
+                    node["prefixItems"][index]
+                    if index < len(node["prefixItems"])
+                    else node.get("items", {}),
+                    schema,
+                )
+                for index, item in enumerate(value)
+            ]
         return [_wire_integers(item, node.get("items", {}), schema) for item in value]
     return value
 
@@ -1379,7 +1465,7 @@ def _artifact_documents(
     expected_schema_digests: Mapping[str, str],
 ) -> tuple[Row, Row, Row, dict[str, Row]]:
     _require(
-        set(expected_schema_digests) == SCHEMA_FILES,
+        set(expected_schema_digests) >= SCHEMA_FILES,
         "complete independently approved schema pins required",
     )
     _require(not root.is_symlink() and root.is_dir(), "unsafe snapshot root")
@@ -1436,10 +1522,20 @@ def _artifact_documents(
         "noncanonical schema",
     )
     _require(schema["schema_version"] == expected_version, "mixed schema versions")
+    opaque = {
+        entry["path"] for entry in manifest["artifacts"] if entry["schema_id"] is None
+    }
+    for entry in manifest["artifacts"]:
+        if entry["path"] in opaque:
+            _require(
+                hashlib.sha256(payloads[entry["path"]]).hexdigest()
+                == entry["logical_digest"],
+                "opaque output logical digest mismatch",
+            )
     documents = {
         name: _json(payload)
         for name, payload in payloads.items()
-        if name.endswith(".json")
+        if name.endswith(".json") and name not in opaque
     }
     for name, document in (
         ("descriptor_schema.json", descriptor),
@@ -1523,7 +1619,9 @@ def read_snapshot(
     )
     tables = _read_parquet(root.resolve(), schema)
     _verify_manifest(descriptor, manifest, schema, tables)
-    resources = _verify_resources(descriptor, manifest, documents, tables)
+    resources = _verify_resources(
+        descriptor, manifest, documents, tables, expected_schema_digests
+    )
     validate_rows(
         tables,
         schema,
@@ -1539,17 +1637,60 @@ def read_snapshot(
         }
         for binding in manifest["bindings"]
     ]
+    configuration_schema = documents["configuration_schema.json"]
+    semantic_configuration_fields = (
+        "as_of",
+        "source_authority",
+        "declaration_source_order",
+    )
+    semantic_schemas = {
+        name: documents[name + ".json"]
+        for name in (
+            "tabular_schema",
+            "declaration_schema",
+            "registry_schema",
+            "extraction_schema",
+            "derivation_definitions_schema",
+        )
+    }
+    semantic_schemas["configuration_schema"] = {
+        **configuration_schema,
+        "properties": {
+            name: configuration_schema["properties"][name]
+            for name in semantic_configuration_fields
+        },
+        "required": list(semantic_configuration_fields),
+    }
+    extracts = [
+        {"kind": entry["kind"], "document": resources[entry["path"]]}
+        for entry in manifest["artifacts"]
+        if entry["kind"] == "extract"
+    ]
+    distinct_extracts = {canonical_bytes(item): item for item in extracts}
     financial = {
         "entities": [[row["entity_id"], row["as_of"]] for row in tables["build"]],
-        "schemas": {
-            name.removesuffix(".json"): documents[name] for name in sorted(SCHEMA_FILES)
-        },
+        "schemas": semantic_schemas,
         "bindings": sorted(bindings, key=canonical_bytes),
         "tables": [
             {"name": item["name"], "logical_digest": item["logical_digest"]}
             for item in manifest["tables"]
         ],
-        "resources": resources,
+        "resources": {
+            "configuration": {
+                field: resources[manifest["configuration"]["path"]][field]
+                for field in semantic_configuration_fields
+            },
+            "registries": sorted(
+                [resources[entry["path"]] for entry in manifest["registries"]],
+                key=canonical_bytes,
+            ),
+            "derivation_definitions": resources[
+                manifest["derivation_definitions"]["path"]
+            ]["definitions"],
+            "interpretation": [
+                distinct_extracts[key] for key in sorted(distinct_extracts)
+            ],
+        },
         **{
             name: manifest[name]
             for name in (
@@ -1564,21 +1705,31 @@ def read_snapshot(
     return Snapshot(tables, schema, manifest, digest)
 
 
-def _verify_resources(
-    descriptor: Row, manifest: Row, documents: dict[str, Row], tables: Tables
+def _verify_resources(  # noqa: C901 - verify each retained resource independently
+    descriptor: Row,
+    manifest: Row,
+    documents: dict[str, Row],
+    tables: Tables,
+    expected_schema_digests: Mapping[str, str],
 ) -> dict[str, Row]:
     payloads = {entry["path"]: entry["byte_digest"] for entry in descriptor["payloads"]}
     schemas = {entry["path"] for entry in manifest["schemas"]}
+    opaque = {
+        entry["path"] for entry in manifest["artifacts"] if entry["schema_id"] is None
+    }
     resources = {
         name: value for name, value in documents.items() if name not in schemas
     }
-    _require(schemas == SCHEMA_FILES, "unsupported schema resource inventory")
+    _require(
+        schemas == set(expected_schema_digests), "unsupported schema resource inventory"
+    )
     entries = [
         *manifest["tables"],
         *manifest["artifacts"],
         *manifest["schemas"],
         *manifest["registries"],
         manifest["configuration"],
+        manifest["derivation_definitions"],
     ]
     paths = [entry["path"] for entry in entries]
     _require(len(set(paths)) == len(paths), "duplicate manifest payload")
@@ -1597,6 +1748,26 @@ def _verify_resources(
         resources[configuration["path"]], documents["configuration_schema.json"]
     )
     _verify_source_authority(resources[configuration["path"]], tables)
+    derivation_reference = manifest["derivation_definitions"]
+    derivation_document = resources[derivation_reference["path"]]
+    validate_json(derivation_document, documents["derivation_definitions_schema.json"])
+    definitions = derivation_document["definitions"]
+    derivations = manifest["derivations"]
+    _require(
+        len(derivations) == len(definitions)
+        and {entry["derivation_id"] for entry in derivations} == set(definitions),
+        "derivation definition inventory mismatch",
+    )
+    for entry in derivations:
+        definition = definitions[entry["derivation_id"]]
+        _require(
+            entry["version"] == str(definition["version"])
+            and entry["content_digest"]
+            == hashlib.sha256(
+                canonical_bytes(definition, integer_strings=False)
+            ).hexdigest(),
+            "derivation definition digest mismatch",
+        )
     for registry in manifest["registries"]:
         _require(
             payloads[registry["path"]] == registry["byte_digest"],
@@ -1611,6 +1782,19 @@ def _verify_resources(
             == hashlib.sha256(canonical_bytes(resources[registry["path"]])).hexdigest(),
             "registry semantics mismatch",
         )
+    for artifact in manifest["artifacts"]:
+        if artifact["kind"] == "extract":
+            _require(
+                artifact["schema_id"] == "extraction_schema",
+                "extract schema identity mismatch",
+            )
+            validate_json(
+                resources[artifact["path"]], documents["extraction_schema.json"]
+            )
+        elif artifact["schema_id"] is not None:
+            schema_path = artifact["schema_id"] + ".json"
+            _require(schema_path in schemas, "unknown interpretation schema")
+            validate_json(resources[artifact["path"]], documents[schema_path])
     for row in tables["declarations"]:
         validate_json(
             _json(row["payload_json"].encode()), documents["declaration_schema.json"]
@@ -1619,10 +1803,16 @@ def _verify_resources(
     checks = {row["check_id"]: row for row in manifest["checks"]}
     _require(len(checks) == len(manifest["checks"]), "duplicate publication check")
     for row in checks.values():
-        _require(
-            row["severity"] != "error" or row["status"] == "pass",
-            "failed error finding",
-        )
+        if row["check_kind"] in {
+            "schema",
+            "identity",
+            "arithmetic",
+            "referential_integrity",
+        }:
+            _require(
+                row["status"] == "pass" and row["exception_declaration_id"] is None,
+                "failed nonwaivable check",
+            )
     for output in manifest["outputs"]:
         for identity in output["required_checks"]:
             _require(
@@ -1630,7 +1820,8 @@ def _verify_resources(
                 "required check did not pass",
             )
     _require(
-        set(payloads) == set(documents) | {name + ".parquet" for name in tables},
+        set(payloads)
+        == set(documents) | opaque | {name + ".parquet" for name in tables},
         "undeclared schema-bearing payload",
     )
     return resources

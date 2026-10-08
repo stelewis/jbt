@@ -4,10 +4,12 @@ Core contributor commands for day-to-day work.
 
 ## Environment setup
 
-- `uv sync --locked`
+- `uv sync --locked --python 3.14`
 - `uv run --locked prek install`
 
-Use `uv sync --locked` to create or update the project environment from the committed, reviewed `uv.lock` without silently re-resolving dependencies.
+Create or update the developer environment from the committed, reviewed `uv.lock` without silently re-resolving dependencies. Supported Python is 3.14 or later; `uv` may select an installed interpreter or provision one.
+
+Use `uv run --locked jbt build --root <synthetic-root> --project project.json` to try application changes. An editable checkout records a development producer and bypasses persistent stage cache, even when clean. Keep source unchanged during a command.
 
 ## Fast edit loop
 
@@ -26,15 +28,31 @@ Run the pure foundations, schema validators, artifact boundaries, and independen
 uv run --locked pytest -q tests/jbt/domain tests/jbt/contracts tests/jbt/artifacts tests/integration/conformance
 ```
 
-These tests also run in the ordinary pytest suite; they are not behind the default-excluded `e2e` marker. The [implemented architecture](../architecture.md) explains what their evidence does and does not establish. Keep synthetic financial expectations independent of the algorithms being tested. The coverage gate requires zero unproven indexed obligations and a nonempty specimen for every table; every indexed case is published and independently verified rather than sampling only cash examples.
+These tests also run in the ordinary pytest suite. Keep synthetic financial expectations independent of the algorithms being tested; the [implemented architecture](../architecture.md) explains the evidence requirements.
 
 The [contract dependencies](./contract-dependencies.md) include native libraries for real Parquet, SQL/UDF, and Beancount checks. Dependency provisioning and advisory checks may access the network; the financial tests must not fetch files, install extensions, or contact services.
 
-The ordinary CI test job allows ten minutes for these real boundary checks. The package job builds both distributions, compares their schema resources, and exercises the Parquet writer imported directly from the built wheel in isolated Python; editable-checkout imports are not packaging evidence.
+## Installed CLI tests
+
+Ordinary tests exercise the editable checkout. Run installed acceptance separately:
+
+```bash
+uv run --locked pytest -q -m e2e
+```
+
+This builds a wheel from the working checkout, including uncommitted application edits, and installs it in private temporary tool environments. It exercises acquisition, builds, and historical verification after reinstallation without changing your own tool installation. The explicit marker overrides the default exclusion of `e2e`.
+
+To test an existing wheel without rebuilding:
+
+```bash
+uv run --locked pytest -q -m e2e --release-wheel "$wheel"
+```
+
+Set `wheel` to the distribution path. Provisioning may contact package indexes and OSV; do not disable security checks to simulate an empty offline advisory cache. See [CI and automation](./ci.md) for hosted jobs and [release standards](../standards/releases.md) for a full publication rehearsal.
 
 ## Full quality gate
 
-- `uv run --locked ruff format && uv run --locked ruff check --fix && uv check --locked && uv run --locked tq check && uv run --locked pytest -q`
+- `uv run --locked ruff format --check && uv run --locked ruff check && uv check --locked && uv run --locked tq check && uv run --locked pytest -q && uv run --locked pytest -q -m e2e`
 
 Run this combined check before opening or updating a pull request.
 
@@ -48,7 +66,7 @@ The default hook set covers hygiene checks, Markdown spelling, lockfile updates,
 
 Run all hooks locally with `uv run --locked prek run -a`.
 
-Run spelling alone with `uv run --locked prek run cspell --all-files`. The hook checks tracked Markdown, including future documentation pages. Add reviewed project terms to `cspell.json`; correct typos in the text instead of whitelisting them. The VS Code Code Spell Checker extension can use the same config for immediate feedback, but is optional.
+Run spelling alone with `uv run --locked prek run cspell --all-files`, or use `--files <changed Markdown paths>` for a focused edit. The hook checks tracked Markdown, including future documentation pages. Correct prose rather than adding dictionary exceptions; add reviewed project terms to `cspell.json` only for genuine terminology. The VS Code Code Spell Checker extension can use the same config for immediate feedback, but is optional.
 
 When rotating external hook revisions, use a frozen update flow so `.pre-commit-config.yaml` stays SHA pinned. See [Pin maintenance](./pin-maintenance.md).
 

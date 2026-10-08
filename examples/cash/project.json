@@ -1,0 +1,466 @@
+{
+    "schema_version": 1,
+    "entity_id": "invented-owner",
+    "sources": [
+        {
+            "accession_id": "ef710272ebe4d457e7b2d32aacc26120017112c22b6ad6ef27954b3e380377f4",
+            "source_scope_id": "bank-feed",
+            "source_account_identifier": "INVENTED-1",
+            "account_id": "bank",
+            "role": "opening_balance"
+        },
+        {
+            "accession_id": "d24b613de5c07e44b6c08331525fbec4d214a02c18210d7b9ce19f25e185f602",
+            "source_scope_id": "bank-feed",
+            "source_account_identifier": "INVENTED-1",
+            "account_id": "bank",
+            "role": "statement"
+        }
+    ],
+    "declarations": [
+        {
+            "key": "bank",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "account",
+                "account_id": "bank",
+                "institution": "Invented Bank",
+                "opened_date": "2025-12-31",
+                "closed_date": null,
+                "operating_commodity_id": "USD",
+                "statements_expected": true,
+                "statement_cadence": "irregular",
+                "civil_zone": "Etc/UTC",
+                "coverage_start_date": "2026-01-01",
+                "bindings": [],
+                "publication_lag_days": 0,
+                "period_rule": "explicit",
+                "expected_periods": [
+                    {
+                        "start": "2026-01-01",
+                        "end": "2026-01-31",
+                        "due": "2026-01-31"
+                    }
+                ],
+                "coverage_basis_ids": [
+                    "posted"
+                ]
+            }
+        },
+        {
+            "key": "issuer",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "counterparty",
+                "counterparty_id": "issuer",
+                "name": "Invented Bank"
+            }
+        },
+        {
+            "key": "cash",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "position",
+                "position_id": "cash",
+                "account_id": "bank",
+                "commodity_id": "USD",
+                "position_kind": "claim",
+                "counterparty_id": "issuer",
+                "measurement_kind": "quantity",
+                "inventory_method": "quantity",
+                "purpose": "general",
+                "terms_declaration_id": null,
+                "bindings": [],
+                "booking_declaration_id": null
+            }
+        },
+        {
+            "key": "usd",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "commodity",
+                "commodity_id": "USD",
+                "name": "USD",
+                "commodity_kind": "currency",
+                "isin": null,
+                "cusip": null,
+                "quote_commodity_id": null,
+                "contract_multiplier": null,
+                "terms_declaration_id": null,
+                "display_precision": 2,
+                "symbols": [
+                    {
+                        "symbol_id": "usd-symbol",
+                        "symbol": "USD",
+                        "source_scope_id": null,
+                        "exchange": null,
+                        "valid_from": "2025-12-31",
+                        "valid_to": null
+                    }
+                ]
+            }
+        },
+        {
+            "key": "income",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "category",
+                "category_id": "income",
+                "name": "income",
+                "category_type": "income",
+                "parent_category_id": null
+            }
+        },
+        {
+            "key": "expense",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "category",
+                "category_id": "expense",
+                "name": "expense",
+                "category_type": "expense",
+                "parent_category_id": null
+            }
+        },
+        {
+            "key": "equity",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "category",
+                "category_id": "equity",
+                "name": "equity",
+                "category_type": "equity",
+                "parent_category_id": null
+            }
+        },
+        {
+            "key": "scope",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "assertion_scope",
+                "scope_id": "scope",
+                "account_id": "bank",
+                "scope_kind": "positions",
+                "measurement": "units",
+                "coverage_basis": "posted",
+                "selection": "positions",
+                "position_ids": [
+                    "cash"
+                ],
+                "quote_commodity_id": null,
+                "valuation_evidence": [],
+                "tolerance": {
+                    "coefficient": "0",
+                    "scale": 0,
+                    "source_scale": 2
+                }
+            }
+        },
+        {
+            "key": "rule-income",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "rule",
+                "order": 0,
+                "matches": [
+                    {
+                        "field": "transactions.payee",
+                        "operator": "equals",
+                        "value": "Invented income"
+                    }
+                ],
+                "assignments": [
+                    {
+                        "field": "postings.category_id",
+                        "value": "income"
+                    }
+                ],
+                "split": []
+            }
+        },
+        {
+            "key": "rule-expense",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "rule",
+                "order": 1,
+                "matches": [
+                    {
+                        "field": "transactions.payee",
+                        "operator": "equals",
+                        "value": "Invented expense"
+                    }
+                ],
+                "assignments": [
+                    {
+                        "field": "postings.category_id",
+                        "value": "expense"
+                    }
+                ],
+                "split": []
+            }
+        },
+        {
+            "key": "initial-cash",
+            "valid_from": "2025-12-31",
+            "valid_to": null,
+            "payload": {
+                "schema_version": 1,
+                "kind": "authored_fact",
+                "event_key": "opening",
+                "fact_kind": "transaction",
+                "record": {
+                    "event_kind": "opening",
+                    "event_state": "recognized",
+                    "payee": null,
+                    "narration": "Opening",
+                    "description_as_stated": null,
+                    "review_state": "reviewed",
+                    "tags": [],
+                    "links": [],
+                    "date_authorized": null,
+                    "date_traded": null,
+                    "date_posted": "2025-12-31",
+                    "date_settled": null,
+                    "date_value": null,
+                    "legs": [
+                        {
+                            "posting_key": "cash",
+                            "commodity_id": "USD",
+                            "amount": {
+                                "coefficient": "100",
+                                "scale": 0,
+                                "source_scale": 2
+                            },
+                            "account_id": "bank",
+                            "category_id": null,
+                            "posting_role": "cash",
+                            "leg_kind": "position",
+                            "position_id": "cash",
+                            "symbol_as_stated": null,
+                            "broker_lot_id": null,
+                            "price_per_unit": null,
+                            "price_commodity_id": null,
+                            "original_amount": null,
+                            "original_commodity_id": null,
+                            "fx_rate_as_stated": null,
+                            "fx_base_commodity_id": null,
+                            "fx_quote_commodity_id": null,
+                            "date_authorized": null,
+                            "date_traded": null,
+                            "date_posted": null,
+                            "date_settled": null,
+                            "date_value": null,
+                            "date_authorized_mode": "inherit",
+                            "date_traded_mode": "inherit",
+                            "date_posted_mode": "inherit",
+                            "date_settled_mode": "inherit",
+                            "date_value_mode": "inherit"
+                        },
+                        {
+                            "posting_key": "boundary",
+                            "commodity_id": "USD",
+                            "amount": {
+                                "coefficient": "-100",
+                                "scale": 0,
+                                "source_scale": 2
+                            },
+                            "account_id": null,
+                            "category_id": "equity",
+                            "posting_role": "principal",
+                            "leg_kind": "boundary",
+                            "position_id": null,
+                            "symbol_as_stated": null,
+                            "broker_lot_id": null,
+                            "price_per_unit": null,
+                            "price_commodity_id": null,
+                            "original_amount": null,
+                            "original_commodity_id": null,
+                            "fx_rate_as_stated": null,
+                            "fx_base_commodity_id": null,
+                            "fx_quote_commodity_id": null,
+                            "date_authorized": null,
+                            "date_traded": null,
+                            "date_posted": null,
+                            "date_settled": null,
+                            "date_value": null,
+                            "date_authorized_mode": "inherit",
+                            "date_traded_mode": "inherit",
+                            "date_posted_mode": "inherit",
+                            "date_settled_mode": "inherit",
+                            "date_value_mode": "inherit"
+                        }
+                    ]
+                },
+                "evidence": [
+                    {
+                        "kind": "source_record",
+                        "id": "7eccf2547e42ed01fd4a77640e5990032cb4c0235e2daa4e11bcfe45f1e9791b"
+                    }
+                ]
+            }
+        }
+    ],
+    "configuration": {
+        "schema_version": 1,
+        "as_of": "2026-01-31",
+        "source_authority": [],
+        "rendering": [
+            {
+                "entity_id": "invented-owner",
+                "sink": "beancount",
+                "target": {
+                    "table": "positions",
+                    "key": [
+                        "cash"
+                    ]
+                },
+                "positive_name": "Assets:Bank",
+                "negative_name": null,
+                "primary_date_role": "posted"
+            },
+            {
+                "entity_id": "invented-owner",
+                "sink": "beancount",
+                "target": {
+                    "table": "categories",
+                    "key": [
+                        "income"
+                    ]
+                },
+                "positive_name": "Income:Other",
+                "negative_name": null,
+                "primary_date_role": "posted"
+            },
+            {
+                "entity_id": "invented-owner",
+                "sink": "beancount",
+                "target": {
+                    "table": "categories",
+                    "key": [
+                        "expense"
+                    ]
+                },
+                "positive_name": "Expenses:Other",
+                "negative_name": null,
+                "primary_date_role": "posted"
+            },
+            {
+                "entity_id": "invented-owner",
+                "sink": "beancount",
+                "target": {
+                    "table": "categories",
+                    "key": [
+                        "equity"
+                    ]
+                },
+                "positive_name": "Equity:Opening",
+                "negative_name": null,
+                "primary_date_role": "posted"
+            }
+        ],
+        "outputs": [
+            {
+                "sink": "beancount",
+                "required_checks": [
+                    "source_reconciliation",
+                    "model_reconciliation",
+                    "occurrence_accounting"
+                ]
+            },
+            {
+                "sink": "tabular",
+                "required_checks": [
+                    "source_reconciliation",
+                    "model_reconciliation",
+                    "occurrence_accounting"
+                ]
+            },
+            {
+                "sink": "summary",
+                "required_checks": [
+                    "source_reconciliation",
+                    "model_reconciliation",
+                    "occurrence_accounting"
+                ]
+            }
+        ],
+        "declaration_source_order": [
+            "project.json"
+        ]
+    },
+    "registries": {
+        "schema_version": 1,
+        "observation_fields": [
+            {
+                "field_name": "source.memo",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.trntype",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.accttype",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.dtstart",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.dtend",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.bankid",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            }
+        ],
+        "status_mappings": [],
+        "source_sequences": [],
+        "coverage_bases": [
+            {
+                "basis_id": "posted",
+                "date_role": "posted",
+                "opening_boundary": "before_first",
+                "closing_boundary": "after_last",
+                "measurement": "units",
+                "balance_view": "settled",
+                "quote_commodity_id": null
+            }
+        ]
+    }
+}

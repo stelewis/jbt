@@ -108,19 +108,31 @@ Also exercise explicit merge and split decisions: retired IDs remain addressable
 
 | Case | Required outcome |
 | --- | --- |
-| Build twice with identical retained inputs | Identical text bytes and typed logical tables; no cache required |
-| Change locale, working directory, process hash seed, or file enumeration order | No semantic or output change |
-| Change tool/plugin code without changing its version label | Execution fingerprint changes or the build refuses an unverifiable producer |
+| Build twice with identical financial selection under the same published version and observed environment | Identical ledger/summary bytes and typed financial tables, including precision, lineage, findings, and financial identity; no cache required |
+| Change ambient timezone, available locale, working directory, process hash seed, or file enumeration order | Cold builds and genuine warm release reuse preserve financial tables, identity, ledger, and summary; ambient settings are not cache keys |
+| Edit development source without changing its version label, including a clean editable checkout | Usable development producer; no persistent cache reads, writes, directory creation, or mutable-source hashing |
+| Attempt to publish different code under an already published version | Release process rejects the attempt; it is not a second valid production producer |
+| Omit optional source-commit provenance while using the same published version | Canonical production identity is unchanged; financial replay is not rejected for provenance availability |
+| Add, remove, or change any visible installed distribution | Canonical observed environment and release cache identity change, even for an unrelated package |
+| Reorder distribution discovery or vary equivalent name spelling | Same normalized sorted metadata; missing metadata and duplicate normalized names fail safely rather than silently choosing one |
 | Upgrade only the Parquet writer | Execution fingerprint and possibly byte digest change; equal typed content has equal logical digest |
 | Swap two differently named input roles or repeat an input edge | Execution identity distinguishes roles and multiplicity |
-| Missing/corrupt vault object, acquisition record, plugin, or required model asset | Verification fails with a safe, specific diagnostic |
+| Missing/corrupt expected vault object, receipt, or retained authored selection with a warm cache | Build/verification fails with a safe, specific diagnostic; cache never substitutes for evidence |
 | Interrupt acquisition before or after writing the object | Original remains; retry verifies or completes one consistent accession |
 | Acquire identical bytes twice for distinct contexts | One object may have multiple accession/binding records; no invented economic duplicate |
-| Fail a check or interrupt publication | Prior complete generation remains published; attempted inputs are not represented as certified |
+| Fail a check or interrupt before current-reference replacement | Prior complete generation remains selected; attempted inputs are not represented as certified |
+| Fail after reference replacement but before durability acknowledgement | Explicit uncertain acknowledgement, not rollback; selected generation is complete |
 | Two commands attempt to publish or append simultaneously | Exclusive local write or explicit refusal; no interleaving or lost decision |
-| Restore on a clean machine from the retained recovery set | No hidden keyring, cache, external path, or network dependency |
-| Build, analyze, inspect, or diagnose with network access monitored and denied | No attempted telemetry, crash upload, update check, or other automatic connection |
-| Explicitly request a supported fetch outside a build | Destination/purpose visible; only the requested fetch occurs; retained result becomes an input before any offline use |
+| Remove the installation and disposable caches, then restore retained financial inputs | Ordinary `uv` reinstallation of the recorded release enables uncached replay; no copied runtime, source, dependency tree, downstream lock, keyring, or original inbox is needed |
+| Verify the same published version with supported different Python, platform, or compatible dependencies | Report observed differences; matching financial tables/content/findings and ledger/summary pass, without whole-manifest equality |
+| Verify with a different published version or a development producer | Refuse substitution with a recorded-release installation instruction; no automatic environment repair |
+| Change only operational envelopes, runtime facts, or mechanically dependent manifest IDs | Financial replay projection remains equal; physical baseline integrity is still validated |
+| Change a financial amount, precision, lineage, finding, derivation, ledger, or summary | Located mismatch; baseline/current bytes and normal cache remain unchanged |
+| Recorded release unavailable or unsupported | Explicit recovery limitation; no claim that every future resolution will reproduce results |
+| Build, inspect, or diagnose with network access monitored and denied | No attempted telemetry, crash upload, update check, or other automatic connection from `jbt` |
+| A component catches a denied Python socket or DNS attempt | Command fails before publication authorization or verification success; application guard does not claim a native sandbox |
+| Provision with external `uv` before application startup | Package, Python, and advisory fetches are permitted; processing itself never invokes a package manager |
+| Explicitly fetch evidence outside `jbt` | Destination/purpose visible; retained bytes become an input before processing |
 | Change a schema or correct an old importer bug | Reviewed expected-result changes; old derived artifacts are rebuilt, not silently migrated |
 
 ## Sources, identity, and correction
@@ -256,6 +268,6 @@ The [analysis boundary](./analysis-boundary.md) owns consumer requirements. Its 
 
 ## Contract coverage
 
-The [delivery plan](../plans/delivery.md#0-establish-and-exercise-the-full-contract) summarizes the completed representation proof; the [coverage index](../../tests/integration/conformance/fixtures/index.json) maps this inventory to executable checks and later processor work. Later stages make the corresponding processors executable. Source acquisition can retain evidence before its processor is available; attempting to publish results that require that processor reports the missing capability.
+The [contract conformance reference](../developer/architecture.md#contract-conformance) describes the representation proof; the [coverage index](../../tests/integration/conformance/fixtures/index.json) maps this inventory to executable checks and later processor work. Later stages make the corresponding processors executable. Source acquisition can retain evidence before its processor is available; attempting to publish results that require that processor reports the missing capability.
 
 Hand-calculate financial expectations, check conservation independently, vary input order, and include counterexamples where internally consistent output is still wrong. Update expected artifacts only after explaining the semantic change.

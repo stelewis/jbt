@@ -1,20 +1,25 @@
 from typing import TYPE_CHECKING
 
 import pytest
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator, SchemaError, ValidationError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 from jbt.contracts.schemas import (
     broker_match_schema,
+    checks_artifact_schema,
     configuration_schema,
     declaration_schema,
+    derivation_definitions_schema,
     descriptor_schema,
     envelope_schema,
+    execution_record_schema,
     extraction_schema,
     manifest_schema,
+    model_artifact_schema,
     registry_schema,
+    summary_artifact_schema,
     validate_document,
 )
 
@@ -30,12 +35,77 @@ from jbt.contracts.schemas import (
         manifest_schema,
         descriptor_schema,
         envelope_schema,
+        execution_record_schema,
+        derivation_definitions_schema,
+        checks_artifact_schema,
+        model_artifact_schema,
+        summary_artifact_schema,
     ],
 )
 def test_documents_are_valid_draft_202012_schemas(factory: Callable[[], dict]) -> None:
     schema = factory()
     Draft202012Validator.check_schema(schema)
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+
+@pytest.fixture
+def execution_record() -> dict:
+    return {
+        "schema_version": 1,
+        "producer": {
+            "kind": "release",
+            "name": "jbt",
+            "version": "0.1.0a1",
+            "source_commit": "synthetic-commit",
+        },
+        "runtime": {
+            "implementation": "cpython",
+            "version": "3.14",
+            "platform": "synthetic",
+            "architecture": "synthetic",
+        },
+        "distributions": [{"name": "jbt", "version": "0.1.0a1"}],
+    }
+
+
+def test_execution_record_distinguishes_release_and_development(
+    execution_record: dict,
+) -> None:
+    schema = execution_record_schema()
+    validate_document(execution_record, schema)
+    execution_record["producer"]["source_commit"] = None
+    validate_document(execution_record, schema)
+    execution_record["producer"].update(kind="development", source_commit=None)
+    validate_document(execution_record, schema)
+    execution_record["producer"].update(source_commit="synthetic-commit")
+    validate_document(execution_record, schema)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda r: r.update(schema_version="1"),
+        lambda r: r.update(schema_version=True),
+        lambda r: r.update(is_dirty=False),
+        lambda r: r["producer"].update(build_id=None),
+        lambda r: r["producer"].update(name="other"),
+        lambda r: r["producer"].update(kind="local"),
+        lambda r: r["producer"].update(version=1),
+        lambda r: r["producer"].update(is_dirty=None),
+        lambda r: r["producer"].update(content_digest="a" * 64),
+        lambda r: r["producer"].pop("source_commit"),
+        lambda r: r["runtime"].update(path="python.tar"),
+        lambda r: r["runtime"].pop("architecture"),
+        lambda r: r["distributions"][0].update(path="jbt.whl"),
+        lambda r: r["distributions"][0].update(version=1),
+    ],
+)
+def test_execution_record_rejects_old_or_open_shapes(
+    execution_record: dict, mutation: Callable[[dict], object]
+) -> None:
+    mutation(execution_record)
+    with pytest.raises(ValidationError):
+        validate_document(execution_record, execution_record_schema())
 
 
 def test_declaration_variants_are_exhaustive_and_closed() -> None:
@@ -186,6 +256,56 @@ def test_remote_schema_resolution_is_refused() -> None:
     for keyword in ("$ref", "$dynamicRef", "$recursiveRef"):
         with pytest.raises(ValueError, match="Only local schema references"):
             validate_document({}, {keyword: "https://invalid.example/schema.json"})
+
+
+def test_subschemas_resolve_against_the_explicit_enclosing_scope() -> None:
+    scope = {"$defs": {"value": {"type": "integer", "minimum": 2}}}
+    branch = {"$ref": "#/$defs/value"}
+    validate_document(2, branch, reference_scope=scope)
+    with pytest.raises(ValidationError):
+        validate_document(1, branch, reference_scope=scope)
+    with pytest.raises(ValidationError):
+        validate_document("2", branch, reference_scope=scope)
+    other = {"$defs": {"value": {"type": "string"}}}
+    validate_document("2", branch, reference_scope=other)
+    with pytest.raises(ValidationError):
+        validate_document(2, branch, reference_scope=other)
+
+
+@pytest.mark.parametrize("keyword", ["$ref", "$dynamicRef", "$recursiveRef"])
+@pytest.mark.parametrize("remote_scope", [False, True])
+def test_scoped_validation_refuses_remote_references_at_both_boundaries(
+    keyword: str, *, remote_scope: bool
+) -> None:
+    remote = {keyword: "https://invalid.example/schema.json"}
+    schema, scope = ({}, remote) if remote_scope else (remote, {})
+    with pytest.raises(ValueError, match="Only local schema references"):
+        validate_document({}, schema, reference_scope=scope)
+
+
+def test_scoped_validation_preserves_schema_and_primitive_checks() -> None:
+    with pytest.raises(ValidationError):
+        validate_document(
+            "2026-02-30", {"type": "string", "format": "date"}, reference_scope={}
+        )
+    with pytest.raises(ValueError, match="json_float"):
+        validate_document(1.0, {"type": "integer"}, reference_scope={})
+    with pytest.raises(ValueError, match="text_nfc"):
+        validate_document("e\u0301", {"type": "string"}, reference_scope={})
+    with pytest.raises(SchemaError):
+        validate_document(1, {"type": "not-a-type"}, reference_scope={})
+
+
+def test_scoped_schema_mutations_do_not_change_cached_validation() -> None:
+    scope = {"$defs": {"value": {"type": "integer"}}}
+    branch = {"$ref": "#/$defs/value"}
+    validate_document(1, branch, reference_scope=scope)
+    scope["$defs"]["value"]["type"] = "string"
+    validate_document("1", branch, reference_scope=scope)
+    with pytest.raises(ValidationError):
+        validate_document(
+            "1", branch, reference_scope={"$defs": {"value": {"type": "integer"}}}
+        )
 
 
 def test_integral_floats_are_not_json_contract_integers() -> None:

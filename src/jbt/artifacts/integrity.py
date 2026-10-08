@@ -1,8 +1,11 @@
 """Local, bounded reads of manifest-pinned artifact files."""
 
+import errno
 import hashlib
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -21,6 +24,7 @@ class IntegrityCode(StrEnum):
     SIZE = "size"
     INVENTORY = "inventory"
     JSON = "json"
+    CHANGED = "changed"
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,11 @@ def require_filename(filename: str) -> None:
     """Allow only a single portable publication filename, never a path."""
     if (
         not isinstance(filename, str)
-        or re.fullmatch(r"[a-z][a-z0-9_]*\.(json|parquet)", filename) is None
+        or re.fullmatch(
+            r"[a-z][a-z0-9_-]*(?:\.(json|parquet|beancount|ledger|txt))?",
+            filename,
+        )
+        is None
     ):
         raise ArtifactIntegrityError(IntegrityCode.PATH, "<invalid-name>")
 
@@ -94,6 +102,36 @@ def _read_integer(value: str) -> int:
     return result
 
 
+def _open_root(root: Path) -> int:
+    if root.is_symlink():
+        raise ArtifactIntegrityError(IntegrityCode.PATH, "<snapshot>")
+    try:
+        return os.open(
+            root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        )
+    except (FileNotFoundError, NotADirectoryError) as error:
+        raise ArtifactIntegrityError(IntegrityCode.PATH, "<snapshot>") from error
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ArtifactIntegrityError(IntegrityCode.PATH, "<snapshot>") from error
+        raise
+
+
+def _open_payload(directory: int, filename: str) -> int:
+    try:
+        return os.open(
+            filename,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            dir_fd=directory,
+        )
+    except FileNotFoundError as error:
+        raise ArtifactIntegrityError(IntegrityCode.MISSING, filename) from error
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise ArtifactIntegrityError(IntegrityCode.SYMLINK, filename) from error
+        raise
+
+
 def read_payload(
     root: Path,
     filename: str,
@@ -101,21 +139,39 @@ def read_payload(
     *,
     maximum_bytes: int,
 ) -> bytes:
-    """Read only one ordinary file directly below a trusted snapshot root."""
+    """Read one stable ordinary opened file below a pinned snapshot root."""
     require_digest(expected_digest)
     require_filename(filename)
     if type(maximum_bytes) is not int or maximum_bytes < 1:
         msg = "maximum_bytes must be a positive integer"
         raise ValueError(msg)
-    if root.is_symlink() or not root.is_dir():
-        raise ArtifactIntegrityError(IntegrityCode.PATH, "<snapshot>")
-    path = root / filename
-    if path.is_symlink():
-        raise ArtifactIntegrityError(IntegrityCode.SYMLINK, filename)
-    if not path.is_file():
-        raise ArtifactIntegrityError(IntegrityCode.MISSING, filename)
-    with path.open("rb") as stream:
-        content = stream.read(maximum_bytes + 1)
+    directory = _open_root(root)
+    try:
+        descriptor = _open_payload(directory, filename)
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise ArtifactIntegrityError(IntegrityCode.PATH, filename)
+            if before.st_size > maximum_bytes:
+                raise ArtifactIntegrityError(IntegrityCode.SIZE, filename)
+            content = stream.read(maximum_bytes + 1)
+            after = os.fstat(stream.fileno())
+            if (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            ) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ):
+                raise ArtifactIntegrityError(IntegrityCode.CHANGED, filename)
+    finally:
+        os.close(directory)
     if len(content) > maximum_bytes:
         raise ArtifactIntegrityError(IntegrityCode.SIZE, filename)
     if byte_digest(content) != expected_digest:

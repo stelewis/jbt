@@ -649,6 +649,7 @@ def validate_manifest(manifest: dict, tables: Tables) -> None:
         *manifest["schemas"],
         *manifest["registries"],
         manifest["configuration"],
+        manifest["derivation_definitions"],
     ]
     _unique(payload_files, ("path",), "manifest.payloads")
     require(
@@ -704,7 +705,13 @@ def validate_descriptor(descriptor: dict, manifest: dict) -> None:
     required.update(row["path"] for row in manifest["artifacts"])
     required.update(row["path"] for row in manifest["schemas"])
     required.update(row["path"] for row in manifest["registries"])
-    required.update({"build.parquet", manifest["configuration"]["path"]})
+    required.update(
+        {
+            "build.parquet",
+            manifest["configuration"]["path"],
+            manifest["derivation_definitions"]["path"],
+        }
+    )
     require(paths == required, "descriptor_payload_inventory", "descriptor")
     require(
         descriptor["manifest_path"] not in paths,

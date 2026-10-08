@@ -104,6 +104,7 @@ def read_number(
     _scale(scale, STORED_SCALE)
     if source_scale is not None:
         _scale(source_scale, STORED_SCALE)
+        _require(source_scale >= scale, "source precision below value scale")
     number = Number(int(coefficient), scale)
     _require(
         str(number.coefficient) == coefficient and number.scale == scale,

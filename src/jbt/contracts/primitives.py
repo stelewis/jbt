@@ -49,7 +49,7 @@ def validate_number(value: dict, location: str) -> None:
     )
     require(type(scale) is int and 0 <= scale <= SCALE_LIMIT, "decimal_scale", location)
     require(
-        source is None or (type(source) is int and 0 <= source <= SCALE_LIMIT),
+        source is None or (type(source) is int and scale <= source <= SCALE_LIMIT),
         "decimal_source_scale",
         location,
     )
