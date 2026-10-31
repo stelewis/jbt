@@ -1,5 +1,152 @@
 {
   "schema_version": 1,
+  "text_semantics": {
+    "entity_id": "identifier",
+    "decimal_coefficient": "identifier",
+    "bundles": {
+      "dates": {},
+      "date_modes": {
+        "identifier": ["date_authorized_mode", "date_traded_mode", "date_posted_mode", "date_settled_mode", "date_value_mode"]
+      },
+      "time": {
+        "identifier": ["timestamp_local", "timestamp_zone", "timestamp_precision"]
+      }
+    },
+    "tables": {
+      "transactions": {
+        "identifier": ["txn_id", "event_kind", "event_state", "review_state", "links"],
+        "descriptive": ["payee", "narration", "description_as_stated", "tags"]
+      },
+      "postings": {
+        "identifier": ["posting_id", "txn_id", "commodity_id", "account_id", "category_id", "step_id", "posting_role", "leg_kind", "position_id", "price_commodity_id", "original_commodity_id", "fx_base_commodity_id", "fx_quote_commodity_id"],
+        "descriptive": ["symbol_as_stated", "broker_lot_id"]
+      },
+      "event_times": {
+        "identifier": ["record_kind", "record_id", "date_role", "time_mode"]
+      },
+      "book_steps": {
+        "identifier": ["step_id", "txn_id", "step_key", "operation_kind"]
+      },
+      "book_step_dependencies": {
+        "identifier": ["before_step_id", "after_step_id", "constraint_kind", "declaration_id"]
+      },
+      "posting_weights": {
+        "identifier": ["posting_id", "component_key", "weight_kind", "commodity_id"]
+      },
+      "positions": {
+        "identifier": ["position_id", "declaration_id", "account_id", "commodity_id", "position_kind", "counterparty_id", "measurement_kind", "inventory_method", "purpose", "terms_declaration_id"]
+      },
+      "lots": {
+        "identifier": ["lot_id", "commodity_id", "creation_step_id", "origin_posting_id", "parent_lot_id", "origin_key", "book_commodity_id"]
+      },
+      "opening_lots": {
+        "identifier": ["lot_id", "declaration_id"],
+        "descriptive": ["broker_lot_id"]
+      },
+      "inventory_pools": {
+        "identifier": ["pool_id", "position_id", "declaration_id", "book_commodity_id"]
+      },
+      "inventory_allocations": {
+        "identifier": ["allocation_id", "step_id", "allocation_kind", "method_declaration_id", "action_id"]
+      },
+      "inventory_changes": {
+        "identifier": ["change_id", "allocation_id", "change_role", "posting_id", "position_id", "lot_id", "pool_id"]
+      },
+      "component_conversions": {
+        "identifier": ["allocation_id", "component_kind", "source_commodity_id", "target_commodity_id", "method_declaration_id"]
+      },
+      "disposals": {
+        "identifier": ["disposal_id", "allocation_id", "proceeds_commodity_id", "fee_attribution_declaration_id"]
+      },
+      "fee_allocations": {
+        "identifier": ["fee_allocation_id", "fee_posting_id", "opening_declaration_id", "target_kind", "target_id", "commodity_id", "book_commodity_id", "treatment", "method_declaration_id"]
+      },
+      "inventory_fee_changes": {
+        "identifier": ["change_id", "fee_allocation_id"]
+      },
+      "reference_changes": {
+        "identifier": ["reference_change_id", "step_id", "position_id", "lot_id", "change_kind", "reference_commodity_id", "terms_declaration_id"]
+      },
+      "reference_settlements": {
+        "identifier": ["reference_change_id", "settlement_posting_id", "commodity_id"]
+      },
+      "assertion_scopes": {
+        "identifier": ["scope_id", "account_id", "declaration_id", "scope_kind", "measurement", "coverage_basis", "selection", "position_ids"]
+      },
+      "balance_assertions": {
+        "identifier": ["assertion_set_id", "scope_id", "assertion_kind", "statement_id"]
+      },
+      "balances": {
+        "identifier": ["balance_id", "assertion_set_id", "position_id", "commodity_id"]
+      },
+      "prices": {
+        "identifier": ["price_id", "commodity_id", "quote_commodity_id", "origin"],
+        "descriptive": ["basis", "market"]
+      },
+      "corporate_actions": {
+        "identifier": ["action_id", "action_kind", "commodity_id", "txn_id"]
+      },
+      "corporate_action_effects": {
+        "identifier": ["effect_id", "action_id", "effect_key", "effect_kind", "input_commodity_id", "resulting_commodity_id", "cash_commodity_id", "basis_commodity_id", "symbol_id", "scope_declaration_id"]
+      },
+      "action_applications": {
+        "identifier": ["effect_id", "target_kind", "target_id", "step_id", "application_role"]
+      },
+      "accounts": {
+        "identifier": ["account_id", "declaration_id", "operating_commodity_id", "statement_cadence", "civil_zone"],
+        "descriptive": ["institution"]
+      },
+      "categories": {
+        "identifier": ["category_id", "declaration_id", "category_type", "parent_category_id"],
+        "descriptive": ["name"]
+      },
+      "commodities": {
+        "identifier": ["commodity_id", "commodity_kind", "isin", "cusip", "quote_commodity_id", "terms_declaration_id"],
+        "descriptive": ["name"]
+      },
+      "counterparties": {
+        "identifier": ["counterparty_id", "declaration_id"],
+        "descriptive": ["name"]
+      },
+      "commodity_symbols": {
+        "identifier": ["symbol_id", "commodity_id", "symbol", "source_scope_id", "exchange"]
+      },
+      "statements": {
+        "identifier": ["statement_id", "account_id", "source_class", "stated_currency", "importer_id", "coverage_basis", "declaration_id"],
+        "descriptive": ["institution"]
+      },
+      "statement_coverage": {
+        "identifier": ["statement_id", "part_key", "coverage_basis", "date_role"]
+      },
+      "source_records": {
+        "identifier": ["source_record_id", "source_blob_digest", "source_scope_id", "source_section", "record_locator", "statement_id", "input_kind", "source_key_domain", "source_key"],
+        "descriptive": ["external_record_id", "ignored_reason"]
+      },
+      "declarations": {
+        "identifier": ["declaration_id", "declaration_key", "declaration_kind", "revision_digest", "document_path", "document_locator"],
+        "descriptive": ["payload_json"]
+      },
+      "economic_identities": {
+        "identifier": ["record_kind", "record_id", "anchor_kind", "anchor_id", "event_key", "identity_state", "decision_declaration_id"]
+      },
+      "event_support": {
+        "identifier": ["txn_id", "source_record_id", "event_key", "support_kind"]
+      },
+      "observations": {
+        "identifier": ["observation_id", "record_kind", "record_id", "field_name", "observation_kind", "value_type", "commodity_id", "source_record_id", "declaration_id"],
+        "descriptive": ["text_value"]
+      },
+      "links": {
+        "identifier": ["link_id", "member_role", "member_kind", "member_id", "link_kind", "origin", "terms_declaration_id"]
+      },
+      "provenance": {
+        "identifier": ["provenance_id", "record_kind", "record_id", "field_name", "value_origin", "evidence_kind", "evidence_id", "derivation_id"]
+      },
+      "build": {
+        "identifier": ["manifest_digest", "producer_version", "schema_digest", "execution_fingerprint"]
+      }
+    }
+  },
   "foreign_keys": {
     "postings": {
       "txn_id": "transactions", "commodity_id": "commodities",
@@ -82,7 +229,9 @@
     "counterparties": {"declaration_id": "declarations"},
     "commodity_symbols": {"commodity_id": "commodities"},
     "statements": {"account_id": "accounts", "declaration_id": "declarations"},
+    "statement_coverage": {"statement_id": "statements"},
     "source_records": {"statement_id": "statements"},
+    "event_support": {"txn_id": "transactions", "source_record_id": "source_records"},
     "economic_identities": {"decision_declaration_id": "declarations"},
     "observations": {
       "commodity_id": "commodities", "source_record_id": "source_records",
@@ -710,10 +859,24 @@
         "period_start": "date?",
         "period_end": "date?",
         "stated_currency": "string?",
-        "source_format": "string",
+        "importer_id": "string?",
         "is_eclipsed": "boolean",
         "coverage_basis": "string",
         "declaration_id": "string?"
+      }
+    },
+    {
+      "name": "statement_coverage",
+      "primary_key": ["statement_id", "part_key", "coverage_basis", "period_start"],
+      "fields": {
+        "statement_id": "string",
+        "part_key": "string",
+        "coverage_basis": "string",
+        "date_role": "string",
+        "period_start": "date",
+        "period_end": "date",
+        "is_complete": "boolean",
+        "is_eclipsed": "boolean"
       }
     },
     {
@@ -729,7 +892,11 @@
         "record_locator": "string",
         "statement_id": "string?",
         "input_kind": "string",
-        "external_record_id": "string?"
+        "external_record_id": "string?",
+        "source_key_domain": "string?",
+        "source_key": "string?",
+        "ignored_reason": "string?",
+        "model_eligible": "boolean?"
       }
     },
     {
@@ -763,6 +930,23 @@
         "event_key": "string",
         "identity_state": "string",
         "decision_declaration_id": "string?"
+      }
+    },
+    {
+      "name": "event_support",
+      "primary_key": [
+        "txn_id",
+        "source_record_id",
+        "event_key"
+      ],
+      "unique": [
+        ["source_record_id", "event_key"]
+      ],
+      "fields": {
+        "txn_id": "string",
+        "source_record_id": "string",
+        "event_key": "string",
+        "support_kind": "string"
       }
     },
     {
@@ -884,7 +1068,8 @@
       "posted",
       "settled",
       "value",
-      "occurred"
+      "occurred",
+      "initiated"
     ],
     "event_times.time_mode": [
       "value",
@@ -933,7 +1118,8 @@
     ],
     "positions.purpose": [
       "general",
-      "collateral"
+      "collateral",
+      "in_transit"
     ],
     "inventory_allocations.allocation_kind": [
       "acquisition",
@@ -1028,8 +1214,12 @@
       "consideration",
       "settlement"
     ],
+    "statement_coverage.date_role": [
+      "authorized", "traded", "posted", "settled", "value"
+    ],
     "accounts.statement_cadence": [
       "monthly",
+      "monthly_cycle",
       "quarterly",
       "annual",
       "irregular"
@@ -1051,14 +1241,6 @@
     "statements.source_class": [
       "statement",
       "rolling"
-    ],
-    "statements.source_format": [
-      "ofx",
-      "csv",
-      "pdf",
-      "json",
-      "xml",
-      "authored"
     ],
     "source_records.input_kind": [
       "bank_statement",
@@ -1083,9 +1265,12 @@
       "contract_terms",
       "corporate_action",
       "identity",
+      "statement_revision",
       "ordering",
       "rule",
-      "correction",
+      "assign",
+      "split",
+      "transfer",
       "link",
       "authored_fact"
     ],
@@ -1095,11 +1280,18 @@
     ],
     "economic_identities.anchor_kind": [
       "source_record",
+      "source_key",
       "declaration"
     ],
     "economic_identities.identity_state": [
       "active",
       "retired"
+    ],
+    "event_support.support_kind": [
+      "selected",
+      "confirming",
+      "eclipsed",
+      "replaced"
     ],
     "observations.observation_kind": [
       "description",
@@ -1118,7 +1310,6 @@
     ],
     "links.link_kind": [
       "transfer",
-      "card_payment",
       "settlement",
       "document",
       "lot_transfer",

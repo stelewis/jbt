@@ -96,8 +96,16 @@ def test_builtin_model_schema_covers_complete_shared_table_wrapper(
         {
             "schema_version": 1,
             "tables": {name: [] for name in empty_record.tables},
-            "checks": [],
+            "findings": [],
+            "determinations": [],
             "derivations": [],
+            "review": {
+                "tail": [],
+                "receipts": [],
+                "rules": [],
+                "counts": {"pending_events": 0, "blocked_records": 0},
+                "proposals": [],
+            },
         },
         integer_strings=False,
     )

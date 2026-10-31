@@ -25,6 +25,7 @@ from typing import Literal
 
 from jbt.domain.errors import ArithmeticDomainError, NumericLimitError
 from jbt.domain.numbers import BoundedRational, ExactDecimal
+from jbt.domain.time import is_midnight
 
 type Row = Mapping[str, object]
 type Tables = Mapping[str, Sequence[Row]]
@@ -234,6 +235,10 @@ class _Projection:
         key = "position_id" if posting["leg_kind"] == "position" else "category_id"
         names = self.accounts if key == "position_id" else self.categories
         identity = posting.get(key)
+        if key == "category_id" and identity is None:
+            raise BeancountProjectionError(
+                "unclassified_boundary", _string(posting, "posting_id")
+            )
         if not isinstance(identity, str) or identity not in names:
             raise BeancountProjectionError(
                 "unmapped_posting", _string(posting, "posting_id")
@@ -370,7 +375,9 @@ class _Projection:
             else []
         )
 
-    def link_metadata(self, txn_id: str) -> list[str]:
+    def link_metadata(
+        self, identity: str, kind: str = "transaction", indent: str = "  "
+    ) -> list[str]:
         members = sorted(
             [
                 _string(row, "link_id"),
@@ -378,13 +385,34 @@ class _Projection:
                 _string(row, "member_role"),
             ]
             for row in self.rows("links")
-            if row["member_kind"] == "transaction" and row["member_id"] == txn_id
+            if row["member_kind"] == kind and row["member_id"] == identity
         )
-        return (
-            _metadata({"link_members": _quoted(members)}, ("link_members",))
-            if members
-            else []
+        documents = {member[0] for member in members if member[1] == "document"}
+        digests = sorted(
+            {
+                _string(row, "member_id")
+                for row in self.rows("links")
+                if row["link_id"] in documents
+                and row["member_role"] == "evidence"
+                and row["member_kind"] == "blob"
+            }
         )
+        return [
+            *(
+                _metadata({"link_members": _quoted(members)}, ("link_members",), indent)
+                if members
+                else []
+            ),
+            *(
+                _metadata(
+                    {"document_blob_digests": _quoted(digests)},
+                    ("document_blob_digests",),
+                    indent,
+                )
+                if digests
+                else []
+            ),
+        ]
 
     def posting(self, posting: Row) -> list[str]:
         posting_id = _string(posting, "posting_id")
@@ -435,6 +463,7 @@ class _Projection:
                 *self.action_effects([("posting", posting_id)]),
                 *self.evidence("postings", posting_id, "    "),
             ]
+        lines.extend(self.link_metadata(posting_id, "posting", "    "))
         return lines
 
     def validate_position(self, posting: Row, changes: Sequence[Row]) -> None:
@@ -661,7 +690,9 @@ class _Projection:
             )
         lines = [
             (
-                f"{event_date} * {_quoted(transaction.get('payee') or '')} "
+                f"{event_date} "
+                f"{'!' if transaction['review_state'] == 'unreviewed' else '*'} "
+                f"{_quoted(transaction.get('payee') or '')} "
                 f"{_quoted(transaction.get('narration') or '')}"
             ),
             *_metadata(
@@ -749,7 +780,7 @@ class _Projection:
                 (assertion["assertion_kind"] == "point" and not midnight)
                 or assertion["is_complete"]
                 or scope["measurement"] != "units"
-                or scope["scope_kind"] != "positions"
+                or scope["scope_kind"] not in {"positions", "account_net"}
                 or (assertion.get("timestamp_local") is not None and not midnight)
             ):
                 raise BeancountProjectionError("unsupported_assertion_scope", identity)
@@ -759,7 +790,7 @@ class _Projection:
                     raise BeancountProjectionError("assertion_date_overflow", identity)
                 when += timedelta(days=1)
             for balance in self.related("balances", "assertion_set_id", identity):
-                position_id = _string(balance, "position_id")
+                position_id = self.assertion_position(scope, balance, identity)
                 if position_id not in self.accounts:
                     raise BeancountProjectionError("unmapped_assertion", identity)
                 self.check_lifetime("position", position_id, when)
@@ -788,25 +819,44 @@ class _Projection:
                 )
         return directives
 
+    def assertion_position(self, scope: Row, balance: Row, identity: str) -> str:
+        """An account-net quantity renders only through one known position."""
+        if scope["scope_kind"] == "positions":
+            return _string(balance, "position_id")
+        candidates = [
+            position
+            for position in self.rows("positions")
+            if position["account_id"] == scope["account_id"]
+            and position["commodity_id"] == balance["commodity_id"]
+        ]
+        if len(candidates) != 1 or (
+            balance["position_id"] is not None
+            and balance["position_id"] != candidates[0]["position_id"]
+        ):
+            raise BeancountProjectionError(
+                "unsupported_account_net_assertion", identity
+            )
+        return _string(candidates[0], "position_id")
+
     def midnight_point(self, assertion: Row, scope: Row) -> bool:
-        """Project an exact UTC point only without same-day ordering ambiguity."""
+        """Project civil midnight only without same-day ordering ambiguity."""
+        local = assertion.get("timestamp_local")
         if (
             assertion["assertion_kind"] != "point"
-            or assertion.get("timestamp_local") != "00:00:00"
-            or assertion.get("timestamp_offset_minutes") != 0
-            or assertion.get("timestamp_precision") != "second"
-            or assertion.get("timestamp_fraction_digits") is not None
+            or not isinstance(local, str)
+            or not is_midnight(local)
+            or assertion.get("timestamp_offset_minutes") is None
             or assertion.get("timestamp_date") != assertion["date"]
         ):
             return False
         accounts = self.index("accounts", "account_id")
         account = accounts.get(_string(scope, "account_id"))
-        if account is None or account.get("civil_zone") != "Etc/UTC":
+        if account is None or account.get("civil_zone") is None:
             return False
         when = _date(assertion, "date")
         identity = _string(assertion, "assertion_set_id")
         positions = {
-            balance["position_id"]
+            self.assertion_position(scope, balance, identity)
             for balance in self.related("balances", "assertion_set_id", identity)
         }
         transactions = self.index("transactions", "txn_id")
@@ -815,6 +865,7 @@ class _Projection:
             == when
             for posting in self.rows("postings")
             if posting["position_id"] in positions
+            and transactions[_string(posting, "txn_id")]["event_state"] == "recognized"
         )
 
     def prices(self) -> list[tuple[date, str, list[str]]]:

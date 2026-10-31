@@ -587,7 +587,7 @@
             "member_kind": "posting",
             "member_id": "@p-out",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           },
           {
             "link_id": "@p-link",
@@ -595,7 +595,7 @@
             "member_kind": "posting",
             "member_id": "@p-in",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           }
         ]
       }

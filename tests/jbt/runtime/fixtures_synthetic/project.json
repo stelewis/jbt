@@ -1,21 +1,10 @@
 {
     "schema_version": 1,
     "entity_id": "invented-owner",
+    "documents": [],
     "sources": [
-        {
-            "accession_id": "ef710272ebe4d457e7b2d32aacc26120017112c22b6ad6ef27954b3e380377f4",
-            "source_scope_id": "bank-feed",
-            "source_account_identifier": "INVENTED-1",
-            "account_id": "bank",
-            "role": "opening_balance"
-        },
-        {
-            "accession_id": "d24b613de5c07e44b6c08331525fbec4d214a02c18210d7b9ce19f25e185f602",
-            "source_scope_id": "bank-feed",
-            "source_account_identifier": "INVENTED-1",
-            "account_id": "bank",
-            "role": "statement"
-        }
+        "ef710272ebe4d457e7b2d32aacc26120017112c22b6ad6ef27954b3e380377f4",
+        "d24b613de5c07e44b6c08331525fbec4d214a02c18210d7b9ce19f25e185f602"
     ],
     "declarations": [
         {
@@ -34,7 +23,13 @@
                 "statement_cadence": "irregular",
                 "civil_zone": "Etc/UTC",
                 "coverage_start_date": "2026-01-01",
-                "bindings": [],
+                "bindings": [
+                    {
+                        "source_scope_id": "bank-feed",
+                        "source_section": "ofx-account:db7b5e948025492c28a4617b41bc72de6bfc37b5ac9826726390be49ad3fce92",
+                        "source_position_key": null
+                    }
+                ],
                 "publication_lag_days": 0,
                 "period_rule": "explicit",
                 "expected_periods": [
@@ -156,13 +151,11 @@
                 "kind": "assertion_scope",
                 "scope_id": "scope",
                 "account_id": "bank",
-                "scope_kind": "positions",
+                "scope_kind": "account_net",
                 "measurement": "units",
                 "coverage_basis": "posted",
-                "selection": "positions",
-                "position_ids": [
-                    "cash"
-                ],
+                "selection": "account_all",
+                "position_ids": [],
                 "quote_commodity_id": null,
                 "valuation_evidence": [],
                 "tolerance": {
@@ -315,7 +308,7 @@
                 "evidence": [
                     {
                         "kind": "source_record",
-                        "id": "7eccf2547e42ed01fd4a77640e5990032cb4c0235e2daa4e11bcfe45f1e9791b"
+                        "id": "57c3080848c9c785846d3729bec34ebfe34bd8f7dbfb8070344f2db933f82522"
                     }
                 ]
             }
@@ -412,6 +405,24 @@
     "registries": {
         "schema_version": 1,
         "observation_fields": [
+            {
+                "field_name": "source.status",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.dtposted",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
+            {
+                "field_name": "source.settled.dtasof",
+                "value_type": "text",
+                "units": "none",
+                "payload_schema": null
+            },
             {
                 "field_name": "source.memo",
                 "value_type": "text",

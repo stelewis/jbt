@@ -1,6 +1,7 @@
 """Independent artifact consumer: replay determinations, never book events."""
 
 import hashlib
+import itertools
 import json
 import re
 import unicodedata
@@ -12,7 +13,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
 import duckdb
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from tests.integration.conformance.consumer_arithmetic import read_number
 
 if TYPE_CHECKING:
@@ -616,7 +617,34 @@ def _sort_value(value: object) -> tuple[int, object]:
     return (1, value.encode("utf-8") if isinstance(value, str) else value)
 
 
+def _validate_text(value: str, *, semantics: str) -> None:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        message = "invalid Unicode text"
+        raise ReaderError(message) from error
+    if semantics == "identifier":
+        _require(bool(value), "empty identifier")
+        _require(unicodedata.normalize("NFC", value) == value, "non-NFC identifier")
+        _require(
+            all(unicodedata.category(character) != "Cc" for character in value),
+            "control character in identifier",
+        )
+
+
+def _validate_text_semantics(column: Row) -> None:
+    if column["kind"] in {"string", "list"}:
+        _require(
+            isinstance(column.get("text_semantics"), str)
+            and column["text_semantics"] in {"identifier", "descriptive"},
+            "missing or invalid text_semantics",
+        )
+    else:
+        _require("text_semantics" not in column, "text_semantics on nontext column")
+
+
 def _validate_cell(column: Row, value: object) -> None:
+    _validate_text_semantics(column)
     name, kind = column["name"], column["kind"]
     if value is None:
         _require(column["nullable"], f"null required field: {name}")
@@ -628,9 +656,7 @@ def _validate_cell(column: Row, value: object) -> None:
         _require(-(2**63) <= value < 2**63, "INT64 range")
     elif kind == "string":
         assert isinstance(value, str)
-        _require(unicodedata.normalize("NFC", value) == value, "non-NFC string")
-        if name.endswith("_id") or name == "entity_id":
-            _require(bool(value), "empty identity")
+        _validate_text(value, semantics=column["text_semantics"])
     elif kind == "date":
         assert isinstance(value, str)
         _require(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is not None, "date spelling")
@@ -638,13 +664,11 @@ def _validate_cell(column: Row, value: object) -> None:
     elif kind == "list":
         assert isinstance(value, list)
         _require(all(type(item) is str for item in value), "non-string list member")
+        for item in value:
+            _validate_text(item, semantics=column["text_semantics"])
         _require(
             value == sorted(set(value), key=lambda item: item.encode("utf-8")),
             "list ordering or duplicate",
-        )
-        _require(
-            all(unicodedata.normalize("NFC", item) == item for item in value),
-            "non-NFC list member",
         )
     if "enum" in column:
         _require(value in column["enum"], f"unknown enumeration: {name}")
@@ -652,6 +676,8 @@ def _validate_cell(column: Row, value: object) -> None:
 
 def _validate_table(table: Row, rows: list[Row]) -> None:
     columns = table["columns"]
+    for column in columns:
+        _validate_text_semantics(column)
     names = {column["name"] for column in columns}
     for row in rows:
         _require(set(row) == names, f"wrong fields: {table['name']}")
@@ -728,6 +754,8 @@ def validate_rows(
         "undeclared entity",
     )
     _validate_symbol_resolution(tables)
+    _validate_event_support(tables)
+    _validate_transfer_links(tables)
     for entity in entities:
         _check_source_sequence_edges(
             tables, entity=entity, directions=source_sequence_directions or {}
@@ -740,6 +768,254 @@ def validate_rows(
     _validate_position_identities(tables)
     _validate_record_references(tables, specifications)
     _require_field_evidence(tables, specifications)
+
+
+def _validate_transfer_links(tables: Tables) -> None:
+    postings = {(p["entity_id"], p["posting_id"]): p for p in tables["postings"]}
+    transactions = {(t["entity_id"], t["txn_id"]): t for t in tables["transactions"]}
+    positions = {(p["entity_id"], p["position_id"]): p for p in tables["positions"]}
+    groups: dict[tuple[str, str], list[Row]] = defaultdict(list)
+    claimed = set()
+    for member in tables["links"]:
+        if member["link_kind"] == "transfer":
+            groups[(member["entity_id"], member["link_id"])].append(member)
+    for (entity, _), members in groups.items():
+        _require(
+            {m["member_role"] for m in members} == {"outgoing", "incoming"},
+            "transfer requires both sides",
+        )
+        amounts = []
+        commodities = set()
+        for member in members:
+            identity = (entity, member["member_id"])
+            _require(
+                member["member_kind"] == "posting"
+                and member["origin"] == "correction"
+                and member["terms_declaration_id"] is None
+                and identity in postings
+                and identity not in claimed,
+                "missing or reused transfer posting",
+            )
+            claimed.add(identity)
+            posting = postings[identity]
+            position = positions.get((entity, posting["position_id"]))
+            _require(
+                posting["leg_kind"] == "position"
+                and transactions[(entity, posting["txn_id"])]["event_state"]
+                == "recognized"
+                and position is not None
+                and position["purpose"] != "in_transit"
+                and position["commodity_id"] == posting["commodity_id"],
+                "transfer member is not a recognized source position leg",
+            )
+            amount = _required_number(posting, "amount")
+            _require(
+                amount < 0 if member["member_role"] == "outgoing" else amount > 0,
+                "transfer direction",
+            )
+            amounts.append(amount)
+            commodities.add(posting["commodity_id"])
+        _require(
+            len(commodities) == 1 and sum(amounts, Fraction()) == 0,
+            "transfer conservation",
+        )
+
+
+def _source_key_event_id(entity: str, anchor: list[str], event_key: str) -> str:
+    def text(value: str) -> bytes:
+        payload = value.encode("utf-8")
+        return b"s" + str(len(payload)).encode("ascii") + b":" + payload
+
+    def sequence(*values: bytes) -> bytes:
+        payload = b"".join(values)
+        return b"l" + str(len(payload)).encode("ascii") + b":" + payload
+
+    fields = sequence(
+        sequence(text("entity"), text(entity)),
+        sequence(text("kind"), text("event")),
+        sequence(
+            text("anchor"), sequence(text("source_key"), *(text(v) for v in anchor))
+        ),
+        sequence(text("event_key"), text(event_key)),
+    )
+    payload = b"JBT\x00" + sequence(text("economic-identity"), b"i1:1", fields)
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _source_key_anchor(identity: Row) -> list[str]:
+    try:
+        anchor = json.loads(identity["anchor_id"])
+    except json.JSONDecodeError as error:
+        message = "invalid source-key anchor JSON"
+        raise ReaderError(message) from error
+    _require(
+        isinstance(anchor, list)
+        and len(anchor) == 4
+        and all(
+            type(value) is str
+            and bool(value)
+            and unicodedata.normalize("NFC", value) == value
+            for value in anchor
+        ),
+        "source-key anchor requires four nonempty strings",
+    )
+    for value in anchor:
+        _validate_text(value, semantics="identifier")
+    _require(
+        json.dumps(anchor, ensure_ascii=False, separators=(",", ":"))
+        == identity["anchor_id"],
+        "noncanonical source-key anchor",
+    )
+    return cast("list[str]", anchor)
+
+
+def _validate_event_support(tables: Tables) -> None:
+    sources = {
+        (row["entity_id"], row["source_record_id"]): row
+        for row in tables["source_records"]
+    }
+    transactions = {
+        (row["entity_id"], row["txn_id"]): row for row in tables["transactions"]
+    }
+    identities = {
+        (row["entity_id"], row["record_id"]): row
+        for row in tables["economic_identities"]
+        if row["record_kind"] == "transaction"
+    }
+    source_keys: dict[tuple[str, str, str, str, str], set[str]] = defaultdict(set)
+    for source in sources.values():
+        _require(
+            (source["source_key_domain"] is None) == (source["source_key"] is None),
+            "source key and domain must occur together",
+        )
+        if source["source_key_domain"] is not None:
+            source_keys[
+                (
+                    source["entity_id"],
+                    source["source_scope_id"],
+                    source["source_section"],
+                    source["source_key_domain"],
+                    source["source_key"],
+                )
+            ].add(source["source_record_id"])
+    by_event: dict[tuple[str, str], list[Row]] = defaultdict(list)
+    occurrences: dict[tuple[str, str, str], str] = {}
+    for support in tables["event_support"]:
+        key = (support["entity_id"], support["txn_id"])
+        source = (support["entity_id"], support["source_record_id"])
+        identity = identities.get(key)
+        _require(
+            key in transactions and identity is not None and source in sources,
+            "event support requires a canonical event and source",
+        )
+        assert identity is not None
+        _require(
+            identity["anchor_kind"] != "declaration",
+            "authored event cannot have source support",
+        )
+        _require(
+            identity["identity_state"] == "active",
+            "retired identity cannot have canonical source membership",
+        )
+        _require(
+            type(support["event_key"]) is str
+            and bool(support["event_key"])
+            and unicodedata.normalize("NFC", support["event_key"])
+            == support["event_key"],
+            "source event key requires nonempty NFC text",
+        )
+        _validate_text(support["event_key"], semantics="identifier")
+        occurrence = (*source, support["event_key"])
+        _require(
+            occurrence not in occurrences
+            or occurrences[occurrence] == support["txn_id"],
+            "source occurrence component supports multiple events",
+        )
+        occurrences[occurrence] = support["txn_id"]
+        _require(
+            support["support_kind"]
+            in {"selected", "confirming", "eclipsed", "replaced"},
+            "unknown event support kind",
+        )
+        _require(
+            transactions[key]["event_state"] != "retracted"
+            or support["support_kind"] == "replaced",
+            "retracted event supports replaced evidence only",
+        )
+        by_event[key].append(support)
+    _require(
+        transactions.keys() <= identities.keys(),
+        "economic event lacks canonical identity",
+    )
+    for key, identity in identities.items():
+        _require(key in transactions, "canonical identity targets a missing event")
+        _require(
+            type(identity["event_key"]) is str
+            and bool(identity["event_key"])
+            and unicodedata.normalize("NFC", identity["event_key"])
+            == identity["event_key"],
+            "canonical event key requires nonempty NFC text",
+        )
+        _validate_text(identity["event_key"], semantics="identifier")
+        transaction = transactions[key]
+        support = by_event[key]
+        _require(
+            identity["identity_state"] != "retired"
+            or transaction["event_state"] == "retracted",
+            "retired identity requires a retracted event",
+        )
+        anchor_sources: set[str] = set()
+        if identity["anchor_kind"] == "source_record":
+            _require(
+                (key[0], identity["anchor_id"]) in sources,
+                "canonical identity targets a missing source anchor",
+            )
+            anchor_sources = {identity["anchor_id"]}
+        elif identity["anchor_kind"] == "source_key":
+            anchor = _source_key_anchor(identity)
+            _require(
+                identity["record_id"]
+                == _source_key_event_id(key[0], anchor, identity["event_key"]),
+                "source-key event identity hash mismatch",
+            )
+            anchor_sources = source_keys.get(
+                (key[0], anchor[0], anchor[1], anchor[2], anchor[3]), set()
+            )
+            _require(
+                bool(anchor_sources),
+                "source-key anchor lacks original retained evidence",
+            )
+        if (
+            identity["anchor_kind"] in {"source_record", "source_key"}
+            and identity["identity_state"] == "active"
+        ):
+            _require(bool(support), "acquired active event has no support")
+            _require(
+                transaction["event_state"] == "retracted"
+                or any(row["support_kind"] == "selected" for row in support),
+                "acquired active event has no selected evidence",
+            )
+            _require(
+                any(
+                    row["source_record_id"] in anchor_sources
+                    and row["event_key"] == identity["event_key"]
+                    for row in support
+                ),
+                "active acquired anchor component lacks supporting evidence",
+            )
+    for step in tables["book_steps"]:
+        _require(
+            transactions[(step["entity_id"], step["txn_id"])]["event_state"]
+            == "recognized",
+            "nonparticipating event has booked effects",
+        )
+    for posting in tables["postings"]:
+        _require(
+            transactions[(posting["entity_id"], posting["txn_id"])]["event_state"]
+            == "recognized"
+            or posting["step_id"] is None,
+            "nonparticipating event has booked effects",
+        )
 
 
 def _validate_declaration_revision(row: Row) -> None:
@@ -1193,19 +1469,18 @@ def _canonical(value: object, *, integer_strings: bool) -> object:
     if type(value) is int:
         return str(value) if integer_strings else value
     if isinstance(value, str):
-        return unicodedata.normalize("NFC", value)
+        _validate_text(value, semantics="descriptive")
+        return value
     if isinstance(value, list):
         return [_canonical(item, integer_strings=integer_strings) for item in value]
     if isinstance(value, dict):
         _require(all(isinstance(key, str) for key in value), "non-string JSON key")
-        normalized = {
-            unicodedata.normalize("NFC", key): _canonical(
-                item, integer_strings=integer_strings
-            )
+        for key in value:
+            _validate_text(key, semantics="identifier")
+        return {
+            key: _canonical(item, integer_strings=integer_strings)
             for key, item in value.items()
         }
-        _require(len(normalized) == len(value), "duplicate normalized JSON key")
-        return normalized
     message = "non-JSON or floating-point canonical value"
     raise ReaderError(message)
 
@@ -1224,10 +1499,14 @@ def canonical_bytes(value: object, *, integer_strings: bool = True) -> bytes:
 
 
 def logical_table_digest(columns: list[Row], rows: list[Row], *, version: int) -> str:
+    for column in columns:
+        _validate_text_semantics(column)
     digest = hashlib.sha256(
         canonical_bytes({"columns": columns, "schema_version": version})
     )
     for row in rows:
+        for column in columns:
+            _validate_cell(column, row[column["name"]])
         digest.update(canonical_bytes([row[column["name"]] for column in columns]))
     return digest.hexdigest()
 
@@ -1235,6 +1514,7 @@ def logical_table_digest(columns: list[Row], rows: list[Row], *, version: int) -
 def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result = {}
     for key, value in pairs:
+        _validate_text(key, semantics="identifier")
         _require(key not in result, "duplicate JSON key")
         result[key] = value
     return result
@@ -1246,13 +1526,18 @@ def _reject_float(_value: str) -> object:
 
 
 def _json(payload: bytes) -> Row:
-    result = json.loads(
-        payload,
-        object_pairs_hook=_unique_pairs,
-        parse_float=_reject_float,
-        parse_constant=_reject_float,
-    )
+    try:
+        result = json.loads(
+            payload.decode("utf-8"),
+            object_pairs_hook=_unique_pairs,
+            parse_float=_reject_float,
+            parse_constant=_reject_float,
+        )
+    except UnicodeDecodeError as error:
+        message = "invalid UTF-8 JSON"
+        raise ReaderError(message) from error
     _require(isinstance(result, dict), "expected JSON object")
+    _canonical(result, integer_strings=False)
     return result
 
 
@@ -1288,15 +1573,28 @@ def _local_schema(value: object) -> None:
             _local_schema(item)
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=128)
 def _checked_validator(schema_bytes: bytes) -> Validator:
     schema = _json(schema_bytes)
     _local_schema(schema)
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
+    formats = FormatChecker(formats=[])
+
+    @formats.checks("identifier")
+    def identifier(value: object) -> bool:
+        if not isinstance(value, str):
+            return True
+        try:
+            _validate_text(value, semantics="identifier")
+        except ReaderError:
+            return False
+        return True
+
+    return Draft202012Validator(schema, format_checker=formats)
 
 
 def validate_json(document: object, schema: Row) -> None:
+    _canonical(document, integer_strings=False)
     try:
         _checked_validator(canonical_bytes(schema, integer_strings=False)).validate(
             document
@@ -1828,45 +2126,25 @@ def _verify_resources(  # noqa: C901 - verify each retained resource independent
 
 
 def _verify_source_authority(configuration: Row, tables: Tables) -> None:
-    scopes = {
-        table: {(row["entity_id"], row[key]) for row in tables[table]}
-        for table, key in (
-            ("accounts", "account_id"),
-            ("commodities", "commodity_id"),
-            ("source_records", "source_record_id"),
-            ("statements", "statement_id"),
-        )
-    }
     intervals: dict[tuple[object, ...], list[Row]] = defaultdict(list)
     for entry in configuration["source_authority"]:
-        scope = entry["scope"]
-        action = entry["fact_kind"] == "action"
         _require(
-            scope["table"] == ("commodities" if action else "accounts")
-            and len(scope["key"]) == 1
-            and (entry["entity_id"], scope["key"][0]) in scopes[scope["table"]]
-            and (entry["coverage_basis_id"] is None) == action
-            and entry["period_start"] <= entry["period_end"],
+            sum(row["account_id"] == entry["account_id"] for row in tables["accounts"])
+            == 1
+            and entry["fact_kind"] in {"movement", "balance"}
+            and entry["coverage_basis_id"] is not None
+            and entry["period_start"] < entry["period_end"],
             "invalid source authority scope",
         )
-        for source in entry["authoritative_sources"]:
-            _require(
-                source["table"] in {"source_records", "statements"}
-                and len(source["key"]) == 1
-                and (entry["entity_id"], source["key"][0]) in scopes[source["table"]],
-                "invalid authoritative source",
-            )
         identity = (
-            entry["entity_id"],
-            scope["table"],
-            tuple(scope["key"]),
+            entry["account_id"],
             entry["fact_kind"],
             entry["coverage_basis_id"],
         )
         _require(
             all(
-                entry["period_start"] > previous["period_end"]
-                or previous["period_start"] > entry["period_end"]
+                entry["period_start"] >= previous["period_end"]
+                or previous["period_start"] >= entry["period_end"]
                 for previous in intervals[identity]
             ),
             "overlapping source authority",
@@ -1911,14 +2189,21 @@ def _verify_provenance(manifest: Row, tables: Tables, configuration: Row) -> Non
         and all(key in declarations for key in effective),
         "invalid effective declaration",
     )
-    active_keys = [
-        (entity, declarations[(entity, identity)]["declaration_key"])
-        for entity, identity in effective
-    ]
-    _require(
-        len(active_keys) == len(set(active_keys)),
-        "multiple active declaration revisions",
-    )
+    active_intervals: dict[tuple[str, str], list[Row]] = {}
+    for entity, identity in effective:
+        declaration = declarations[(entity, identity)]
+        active_intervals.setdefault(
+            (entity, declaration["declaration_key"]), []
+        ).append(declaration)
+    for revisions in active_intervals.values():
+        ordered = sorted(revisions, key=lambda row: row["valid_from"] or "")
+        for previous, current in itertools.pairwise(ordered):
+            _require(
+                previous["valid_to"] is not None
+                and current["valid_from"] is not None
+                and previous["valid_to"] <= current["valid_from"],
+                "overlapping active declaration revisions",
+            )
     _verify_custody(manifest, tables)
     _verify_decision_evidence(manifest, tables, declarations, effective)
 
@@ -1980,8 +2265,15 @@ def _verify_decision_evidence(
                 and declarations[(row["entity_id"], row["evidence_id"])][
                     "declaration_kind"
                 ]
-                == "correction",
-                "correction provenance is not a correction declaration",
+                in {
+                    "assign",
+                    "split",
+                    "identity",
+                    "statement_revision",
+                    "transfer",
+                    "link",
+                },
+                "correction provenance is not a decision declaration",
             )
     for row in manifest["checks"]:
         _require(row["entity_id"] in entities, "unknown publication check entity")

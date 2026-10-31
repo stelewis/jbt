@@ -6,7 +6,6 @@ from fractions import Fraction
 import pytest
 from tests.integration.conformance.corpus import FixtureCase, load_case
 
-from jbt.contracts.catalog import catalog
 from jbt.contracts.declarations import validate_declaration
 from jbt.contracts.validation import ContractError, validate_tables
 
@@ -69,24 +68,6 @@ def _transfer_reference_is_preserved(case: FixtureCase) -> bool:
         == _number(incoming, "reference_after")
         and outgoing["lot_id"] == incoming["lot_id"]
     )
-
-
-def test_variant_is_a_complete_valid_hand_authored_specimen() -> None:
-    case = load_case("reference-variants")
-    validate_tables(case.tables)
-    for declaration in case.tables["declarations"]:
-        payload_json = declaration["payload_json"]
-        assert isinstance(payload_json, str)
-        validate_declaration(json.loads(payload_json))
-    assert set(case.tables) == {table.name for table in catalog()}
-    assert len(case.domain_records) == 12
-    assert len(case.tables["reference_changes"]) == 14
-    assert {mutation["id"] for mutation in case.negative_cases} >= {
-        "partial-reset-without-branch",
-        "transfer-reprices-destination",
-        "collateral-only-reset",
-        "eur-fee-converted-without-evidence",
-    }
 
 
 def test_final_variation_partial_reset_transfer_and_reversal_replay() -> None:

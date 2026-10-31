@@ -12,12 +12,14 @@ from jbt.contracts.validation import (
     _action_applications,
     _action_effects,
     _economic_identities,
+    _evidence,
     _intervals,
     _positions_and_lineage,
+    _statements,
     validate_link_members,
     validate_tables,
 )
-from jbt.domain.identity import AuthoredAnchor, Occurrence, event_id
+from jbt.domain.identity import AcquiredAnchor, AuthoredAnchor, Occurrence, event_id
 from jbt.domain.ids import EntityId, SemanticKey
 
 TABLE_NAMES = [
@@ -52,9 +54,11 @@ TABLE_NAMES = [
     "counterparties",
     "commodity_symbols",
     "statements",
+    "statement_coverage",
     "source_records",
     "declarations",
     "economic_identities",
+    "event_support",
     "observations",
     "links",
     "provenance",
@@ -62,9 +66,53 @@ TABLE_NAMES = [
 ]
 
 
+@pytest.mark.parametrize("decision_kind", ["transfer", "link"])
+def test_link_stage_decisions_can_evidence_corrections(decision_kind: str) -> None:
+    tables = {
+        "observations": [],
+        "provenance": [
+            {
+                "entity_id": "owner",
+                "record_kind": "postings",
+                "record_id": '["source-leg"]',
+                "field_name": "position_id",
+                "value_origin": "correction",
+                "evidence_kind": "declaration",
+                "evidence_id": "reviewed",
+            }
+        ],
+    }
+    indexes = {
+        "postings": {("owner", "source-leg"): {}},
+        "declarations": {("owner", "reviewed"): {"declaration_kind": decision_kind}},
+    }
+    specs = {
+        "postings": {
+            "primary_key": ["entity_id", "posting_id"],
+            "logical_fields": ["position_id"],
+        }
+    }
+    _evidence(tables, indexes, specs)
+    indexes["declarations"][("owner", "reviewed")]["declaration_kind"] = "category"
+    with pytest.raises(ContractError, match="correction_evidence"):
+        _evidence(tables, indexes, specs)
+
+
 @pytest.fixture
 def snapshot() -> dict:
     tables = {name: [] for name in TABLE_NAMES}
+    canonical = event_id(
+        EntityId("e"),
+        Occurrence(
+            AcquiredAnchor(
+                "1" * 64,
+                SemanticKey("scope"),
+                SemanticKey("section"),
+                SemanticKey("json:row"),
+            ),
+            SemanticKey("transaction"),
+        ),
+    ).value
     tables["build"] = [
         {
             "entity_id": "e",
@@ -79,7 +127,7 @@ def snapshot() -> dict:
     tables["transactions"] = [
         {
             "entity_id": "e",
-            "txn_id": "t",
+            "txn_id": canonical,
             "event_kind": "transaction",
             "event_state": "pending",
             "payee": None,
@@ -95,11 +143,104 @@ def snapshot() -> dict:
             "date_value": None,
         }
     ]
+    tables["source_records"] = [
+        {
+            "entity_id": "e",
+            "source_record_id": "source",
+            "source_blob_digest": "1" * 64,
+            "source_scope_id": "scope",
+            "source_section": "section",
+            "record_locator": "json:row",
+            "statement_id": None,
+            "input_kind": "bank_statement",
+            "external_record_id": None,
+            "source_key_domain": None,
+            "source_key": None,
+            "ignored_reason": None,
+            "model_eligible": None,
+        }
+    ]
+    tables["economic_identities"] = [
+        {
+            "entity_id": "e",
+            "record_kind": "transaction",
+            "record_id": canonical,
+            "anchor_kind": "source_record",
+            "anchor_id": "source",
+            "event_key": "transaction",
+            "identity_state": "active",
+            "decision_declaration_id": None,
+        }
+    ]
+    tables["event_support"] = [
+        {
+            "entity_id": "e",
+            "txn_id": canonical,
+            "source_record_id": "source",
+            "event_key": "transaction",
+            "support_kind": "selected",
+        }
+    ]
     return tables
 
 
 def test_complete_empty_tables_and_required_nulls_are_valid(snapshot: dict) -> None:
     validate_tables(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("importer_id", "declaration_id", "has_source", "error"),
+    [
+        ("external-statements", None, True, None),
+        ("external-statements", None, False, "acquired_statement_evidence"),
+        (None, None, True, "authored_statement"),
+        (None, "authored-period", False, None),
+    ],
+)
+def test_statements_require_evidence_for_their_acquired_or_authored_origin(
+    importer_id: str | None,
+    declaration_id: str | None,
+    *,
+    has_source: bool,
+    error: str | None,
+) -> None:
+    tables = {
+        "statements": [
+            {
+                "entity_id": "owner",
+                "statement_id": "period",
+                "source_class": "statement",
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "importer_id": importer_id,
+                "declaration_id": declaration_id,
+            }
+        ],
+        "statement_coverage": [],
+        "source_records": [{"entity_id": "owner", "statement_id": "period"}]
+        if has_source
+        else [],
+    }
+    if error is None:
+        _statements(tables)
+    else:
+        with pytest.raises(ContractError, match=error):
+            _statements(tables)
+
+
+def test_descriptive_physical_rows_are_exact(snapshot: dict) -> None:
+    text = " e\u0301\n\x00 "
+    row = snapshot["transactions"][0]
+    row.update(
+        payee=text,
+        narration=text,
+        description_as_stated=text,
+        tags=["", text, "e\u0301", "é"],
+    )
+    snapshot["source_records"][0]["external_record_id"] = text
+    validate_tables(snapshot)
+    assert row["narration"] == text
+    assert row["tags"] == ["", text, "e\u0301", "é"]
     validate_tables({name: [] for name in TABLE_NAMES})
 
 
@@ -124,7 +265,24 @@ def test_complete_empty_tables_and_required_nulls_are_valid(snapshot: dict) -> N
         (lambda t: t["build"][0].update(is_dirty=None), "closed_row"),
         (lambda t: t["build"][0].update(is_dirty=False), "closed_row"),
         (lambda t: t["build"][0].update(is_dirty=True), "closed_row"),
-        (lambda t: t["transactions"][0].update(narration="e\u0301"), "text_nfc"),
+        (lambda t: t["transactions"][0].update(narration="\ud800"), "text_utf8"),
+        (
+            lambda t: t["transactions"][0].update(entity_id="e\u0301"),
+            "canonical_key_required",
+        ),
+        (
+            lambda t: t["transactions"][0].update(entity_id=""),
+            "canonical_key_required",
+        ),
+        (
+            lambda t: t["transactions"][0].update(entity_id="\n"),
+            "canonical_key_required",
+        ),
+        (
+            lambda t: t["transactions"][0].update(links=["e\u0301"]),
+            "canonical_key_required",
+        ),
+        (lambda t: t["economic_identities"].clear(), "economic_identity_required"),
     ],
 )
 def test_strict_boundary_mutations(
@@ -141,6 +299,7 @@ def test_duplicate_and_misordered_rows_fail(snapshot: dict) -> None:
     snapshot["transactions"].append(deepcopy(snapshot["transactions"][0]))
     with pytest.raises(ContractError, match="primary_key_unique"):
         validate_tables(snapshot)
+    snapshot["transactions"][0].update(txn_id="z")
     snapshot["transactions"][1].update(txn_id="a")
     with pytest.raises(ContractError, match="row_order"):
         validate_tables(snapshot)
@@ -170,13 +329,13 @@ def test_posted_date_and_time_cannot_disagree(snapshot: dict) -> None:
     timestamp: dict = {
         "entity_id": "e",
         "record_kind": "transactions",
-        "record_id": "t",
+        "record_id": snapshot["transactions"][0]["txn_id"],
         "date_role": "posted",
         "time_mode": "value",
         "timestamp_date": "2026-01-02",
         "timestamp_local": None,
         "timestamp_offset_minutes": None,
-        "timestamp_zone": "Pacific/Auckland",
+        "timestamp_zone": "Europe/Paris",
         "timestamp_precision": "date",
         "timestamp_fraction_digits": None,
     }
@@ -207,6 +366,7 @@ def test_authored_economic_identity_uses_stable_key_not_revision_id() -> None:
         "anchor_id": "reviewed-key",
         "event_key": "economic-component",
         "identity_state": "active",
+        "decision_declaration_id": None,
     }
     tables = {
         "economic_identities": [row],
@@ -290,6 +450,134 @@ def test_authored_position_and_pool_ids_match_payload_not_declaration_key(
     row[field] = "different-authored-id"
     with pytest.raises(ContractError, match=f"{kind}_identity"):
         _positions_and_lineage(tables, indexes)
+
+
+@pytest.fixture
+def keyed_snapshot() -> dict:
+    from tests.integration.conformance.corpus import load_case  # noqa: PLC0415
+
+    return deepcopy(load_case("keyed-overlap").tables)
+
+
+def test_keyed_evidence_has_complete_membership_without_duplicate_events(
+    keyed_snapshot: dict,
+) -> None:
+    validate_tables(keyed_snapshot)
+    keys = [
+        row
+        for row in keyed_snapshot["economic_identities"]
+        if row["anchor_kind"] == "source_key"
+    ]
+    assert len(keys) == 3
+    assert len(keyed_snapshot["event_support"]) == 6
+
+
+@pytest.mark.parametrize(
+    ("mutation", "code"),
+    [
+        ("unpaired-key", "source_key_pair"),
+        ("missing-support", "event_support_required"),
+        ("no-selected-support", "event_support_selected"),
+        ("missing-anchor-component", "event_support_anchor"),
+        ("missing-key-evidence", "identity_anchor"),
+        ("noncanonical-key", "source_key_anchor_encoding"),
+    ],
+)
+def test_keyed_event_support_rejects_incomplete_or_invalid_evidence(
+    keyed_snapshot: dict,
+    mutation: str,
+    code: str,
+) -> None:
+    identity = next(
+        row
+        for row in keyed_snapshot["economic_identities"]
+        if row["anchor_kind"] == "source_key"
+    )
+    members = [
+        row
+        for row in keyed_snapshot["event_support"]
+        if row["txn_id"] == identity["record_id"]
+    ]
+    if mutation == "unpaired-key":
+        next(
+            row
+            for row in keyed_snapshot["source_records"]
+            if row["record_locator"] == "json:credit-confirmation"
+        )["source_key_domain"] = None
+    elif mutation == "missing-support":
+        keyed_snapshot["event_support"] = [
+            row
+            for row in keyed_snapshot["event_support"]
+            if row["txn_id"] != identity["record_id"]
+        ]
+    elif mutation == "no-selected-support":
+        for row in members:
+            row["support_kind"] = "confirming"
+    elif mutation == "missing-anchor-component":
+        for member in members:
+            member["event_key"] = "another-component"
+    elif mutation == "missing-key-evidence":
+        fields = json.loads(identity["anchor_id"])
+        fields[3] = "unobserved-key"
+        identity["anchor_id"] = json.dumps(fields, separators=(",", ":"))
+    else:
+        identity["anchor_id"] = json.dumps(json.loads(identity["anchor_id"]))
+    with pytest.raises(ContractError, match=code):
+        validate_tables(keyed_snapshot)
+
+
+def test_support_components_need_not_equal_canonical_event_key(
+    keyed_snapshot: dict,
+) -> None:
+    source = next(
+        row
+        for row in keyed_snapshot["source_records"]
+        if row["record_locator"] == "json:credit-confirmation"
+    )
+    member = next(
+        row
+        for row in keyed_snapshot["event_support"]
+        if row["source_record_id"] == source["source_record_id"]
+    )
+    old_key = json.dumps(
+        [member["txn_id"], member["source_record_id"], member["event_key"]],
+        separators=(",", ":"),
+    )
+    member["event_key"] = "corresponding-source-component"
+    new_key = json.dumps(
+        [member["txn_id"], member["source_record_id"], member["event_key"]],
+        separators=(",", ":"),
+    )
+    for edge in keyed_snapshot["provenance"]:
+        if edge["record_kind"] == "event_support" and edge["record_id"] == old_key:
+            edge["record_id"] = new_key
+    validate_tables(keyed_snapshot)
+
+
+def test_one_occurrence_component_cannot_support_two_events(
+    keyed_snapshot: dict,
+) -> None:
+    keyed = [
+        row
+        for row in keyed_snapshot["economic_identities"]
+        if row["anchor_kind"] == "source_key"
+    ]
+    member = next(
+        row
+        for row in keyed_snapshot["event_support"]
+        if row["txn_id"] == keyed[0]["record_id"]
+    )
+    keyed_snapshot["event_support"].append({**member, "txn_id": keyed[1]["record_id"]})
+    keyed_snapshot["event_support"].sort(
+        key=lambda row: (
+            row["entity_id"],
+            row["txn_id"],
+            row["source_record_id"],
+            row["event_key"],
+        )
+    )
+    with pytest.raises(ContractError, match="composite_key_unique"):
+        validate_tables(keyed_snapshot)
 
 
 def test_declaration_interval_allows_unbounded_start_with_finite_end() -> None:

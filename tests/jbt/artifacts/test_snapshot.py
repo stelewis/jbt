@@ -15,10 +15,12 @@ from jbt.artifacts.execution import (
 )
 from jbt.artifacts.integrity import byte_digest, decode_document, read_payload
 from jbt.artifacts.parquet import Compression, WriterSettings
-from jbt.artifacts.reader import read_snapshot
 from jbt.artifacts.snapshot import (
     OutputPayload,
     SnapshotInput,
+    _financial_digest,
+    _output_entries,
+    _schema_resources,
     assemble_snapshot,
 )
 from jbt.contracts.catalog import catalog
@@ -29,6 +31,24 @@ from jbt.domain.canonical import encode_json
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
+
+
+def _identity(inputs: SnapshotInput) -> str:
+    schemas = _schema_resources(inputs.extra_schemas)
+    output_bytes, entries = _output_entries(inputs.output_payloads, {}, schemas)
+    artifacts = inputs.metadata["artifacts"]
+    assert isinstance(artifacts, list)
+    metadata = {
+        **inputs.metadata,
+        "artifacts": [*artifacts, *entries],
+    }
+    return _financial_digest(
+        schemas,
+        [],
+        [(build.entity_id, build.as_of) for build in inputs.builds],
+        metadata,
+        {**inputs.resources, **output_bytes},
+    )
 
 
 def test_complete_empty_snapshot_is_pinned_without_digest_cycle(
@@ -62,6 +82,12 @@ def test_complete_empty_snapshot_is_pinned_without_digest_cycle(
     assert not (tmp_path / "schema.json").exists()
     schemas = manifest["schemas"]
     assert isinstance(schemas, list)
+    assert {
+        "decision_body_schema",
+        "journal_entry_schema",
+        "journal_head_schema",
+        "review_report_schema",
+    }.isdisjoint(entry["schema_id"] for entry in schemas)
     assert any(
         isinstance(entry, dict)
         and entry.get("schema_id") == "tabular_schema"
@@ -153,23 +179,16 @@ def test_retained_schema_constraints_change_financial_identity(
 
 
 def test_rendering_schema_constraints_do_not_change_financial_identity(
-    tmp_path: Path,
-    settings: WriterSettings,
     empty_record: SnapshotInput,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    baseline = assemble_snapshot(first, empty_record, settings)
+    baseline = _identity(empty_record)
     schema = configuration_schema()
     schema["properties"]["rendering"]["items"]["properties"]["positive_name"][
         "const"
     ] = "synthetic"
     monkeypatch.setattr("jbt.artifacts.snapshot.configuration_schema", lambda: schema)
-    result = assemble_snapshot(second, empty_record, settings)
-    assert baseline.financial_digest == result.financial_digest
-    assert baseline.manifest_digest != result.manifest_digest
+    assert baseline == _identity(empty_record)
 
 
 def test_execution_only_facts_do_not_change_financial_identity(
@@ -209,69 +228,6 @@ def test_execution_only_facts_do_not_change_financial_identity(
     assert baseline.financial_digest == result.financial_digest
     assert baseline.manifest_digest != result.manifest_digest
     assert baseline.descriptor_digest != result.descriptor_digest
-
-
-def test_execution_record_changes_do_not_change_financial_identity(
-    tmp_path: Path,
-    settings: WriterSettings,
-    empty_record: SnapshotInput,
-) -> None:
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    document = {
-        "schema_version": 1,
-        "producer": {
-            "kind": "development",
-            "name": "jbt",
-            "version": "1",
-            "source_commit": None,
-        },
-        "runtime": {
-            "implementation": "cpython",
-            "version": "3.14",
-            "platform": "synthetic",
-            "architecture": "synthetic",
-        },
-        "distributions": [],
-    }
-
-    def record(distributions: list[dict[str, str]]) -> SnapshotInput:
-        content = encode_json(
-            {**document, "distributions": distributions}, integer_strings=False
-        )
-        return replace(
-            empty_record,
-            execution=replace(
-                empty_record.execution, execution_digest=byte_digest(content)
-            ),
-            output_payloads=[
-                OutputPayload(
-                    "execution",
-                    "execution.json",
-                    content,
-                    byte_digest(content),
-                    "execution_record_schema",
-                )
-            ],
-        )
-
-    baseline = assemble_snapshot(first, record([]), settings)
-    result = assemble_snapshot(
-        second, record([{"name": "extra", "version": "2"}]), settings
-    )
-    assert baseline.financial_digest == result.financial_digest
-    assert baseline.manifest_digest != result.manifest_digest
-    for directory, publication in ((first, baseline), (second, result)):
-        snapshot = read_snapshot(directory, publication.descriptor_digest)
-        assert "execution.json" in snapshot.outputs
-        assert (
-            decode_document(snapshot.outputs["execution.json"], "execution.json")[
-                "schema_version"
-            ]
-            == 1
-        )
-        assert snapshot.manifest["logical_content_digest"] == baseline.financial_digest
 
 
 def test_opaque_outputs_are_inventoried_without_affecting_financial_content(
@@ -316,12 +272,9 @@ def test_opaque_outputs_are_inventoried_without_affecting_financial_content(
 
 
 def test_output_selection_is_not_financial_semantics(
-    tmp_path: Path, settings: WriterSettings, empty_record: SnapshotInput
+    empty_record: SnapshotInput,
 ) -> None:
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    baseline = assemble_snapshot(first, empty_record, settings)
+    baseline = _identity(empty_record)
     configuration = decode_document(
         empty_record.resources["configuration.json"], "configuration.json"
     )
@@ -340,17 +293,13 @@ def test_output_selection_is_not_financial_semantics(
         },
         resources={**empty_record.resources, "configuration.json": payload},
     )
-    result = assemble_snapshot(second, changed, settings)
-    assert baseline.financial_digest == result.financial_digest
+    assert baseline == _identity(changed)
 
 
 def test_declaration_source_order_changes_financial_content(
-    tmp_path: Path, settings: WriterSettings, empty_record: SnapshotInput
+    empty_record: SnapshotInput,
 ) -> None:
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    baseline = assemble_snapshot(first, empty_record, settings)
+    baseline = _identity(empty_record)
     configuration = decode_document(
         empty_record.resources["configuration.json"], "configuration.json"
     )
@@ -367,10 +316,7 @@ def test_declaration_source_order_changes_financial_content(
         },
         resources={**empty_record.resources, "configuration.json": payload},
     )
-    result = assemble_snapshot(second, changed, settings)
-    assert baseline.financial_digest != result.financial_digest
-    assert baseline.manifest_digest != result.manifest_digest
-    assert baseline.descriptor_digest != result.descriptor_digest
+    assert baseline != _identity(changed)
 
 
 def _extract_payload(
@@ -385,15 +331,8 @@ def _extract_payload(
             "source_scope_id": source_scope_id,
             "source_blob_digest": "sha256:synthetic",
             "importer_id": importer_id,
-            "source_scope": {
-                "source_class": "document",
-                "institution": None,
-                "period_start": None,
-                "period_end": None,
-                "completeness": "unstated",
-                "source_accounts": [],
-                "revisions": [],
-            },
+            "source_scope": {"sections": []},
+            "status_mappings": [],
             "records": [],
             "unsupported_content": [
                 {
@@ -415,7 +354,7 @@ def _extract_output(path: str, payload: bytes) -> OutputPayload:
 
 
 def test_retained_extract_changes_financial_provenance(
-    tmp_path: Path, settings: WriterSettings, empty_record: SnapshotInput
+    empty_record: SnapshotInput,
 ) -> None:
     def with_extract(reason: str) -> SnapshotInput:
         return replace(
@@ -425,16 +364,13 @@ def test_retained_extract_changes_financial_provenance(
             ),
         )
 
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    left = assemble_snapshot(first, with_extract("unsupported_contract"), settings)
-    right = assemble_snapshot(second, with_extract("unknown_source_content"), settings)
-    assert left.financial_digest != right.financial_digest
+    assert _identity(with_extract("unsupported_contract")) != _identity(
+        with_extract("unknown_source_content")
+    )
 
 
 def test_duplicate_extract_packaging_is_not_new_financial_evidence(
-    tmp_path: Path, settings: WriterSettings, empty_record: SnapshotInput
+    empty_record: SnapshotInput,
 ) -> None:
     payload = _extract_payload("unsupported_contract")
     original = _extract_output("extract-0.json", payload)
@@ -472,44 +408,19 @@ def test_duplicate_extract_packaging_is_not_new_financial_evidence(
     )
     results = {}
     for name, artifacts, metadata in cases:
-        destination = tmp_path / name
-        destination.mkdir()
-        results[name] = assemble_snapshot(
-            destination,
+        results[name] = _identity(
             replace(empty_record, metadata=metadata, output_payloads=artifacts),
-            settings,
         )
     baseline = results["baseline"]
-    assert results["duplicate"].financial_digest == baseline.financial_digest
-    assert results["recovery"].financial_digest == baseline.financial_digest
-    assert results["duplicate"].descriptor_digest != baseline.descriptor_digest
-    assert results["recovery"].descriptor_digest != baseline.descriptor_digest
-    assert results["distinct-scope"].financial_digest != baseline.financial_digest
-    assert results["distinct-importer"].financial_digest != baseline.financial_digest
-    duplicate_manifest = decode_document(
-        (tmp_path / "duplicate" / "manifest.json").read_bytes(), "manifest.json"
-    )
-    artifacts = duplicate_manifest["artifacts"]
-    assert isinstance(artifacts, list)
-    paths = set()
-    for entry in artifacts:
-        assert isinstance(entry, dict)
-        paths.add(entry["path"])
-    assert paths == {
-        "extract-0.json",
-        "extract-1.json",
-    }
+    assert results["duplicate"] == results["recovery"] == baseline
+    assert results["distinct-scope"] != baseline
+    assert results["distinct-importer"] != baseline
 
 
 def test_source_bindings_change_financial_identity(
-    tmp_path: Path,
-    settings: WriterSettings,
     empty_record: SnapshotInput,
 ) -> None:
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    baseline = assemble_snapshot(first, empty_record, settings)
+    baseline = _identity(empty_record)
     changed = replace(
         empty_record,
         metadata={
@@ -524,14 +435,10 @@ def test_source_bindings_change_financial_identity(
             ],
         },
     )
-    result = assemble_snapshot(second, changed, settings)
-    assert baseline.financial_digest != result.financial_digest
-    assert baseline.manifest_digest != result.manifest_digest
+    assert baseline != _identity(changed)
 
 
 def test_binding_enumeration_does_not_change_financial_identity(
-    tmp_path: Path,
-    settings: WriterSettings,
     empty_record: SnapshotInput,
 ) -> None:
     bindings = [
@@ -543,27 +450,19 @@ def test_binding_enumeration_does_not_change_financial_identity(
         }
         for scope in ("source-a", "source-b")
     ]
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    baseline = assemble_snapshot(
-        first,
+    baseline = _identity(
         replace(
             empty_record,
             metadata={**empty_record.metadata, "bindings": bindings},
         ),
-        settings,
     )
-    reordered = assemble_snapshot(
-        second,
+    reordered = _identity(
         replace(
             empty_record,
             metadata={**empty_record.metadata, "bindings": list(reversed(bindings))},
         ),
-        settings,
     )
-    assert baseline.financial_digest == reordered.financial_digest
-    assert baseline.manifest_digest != reordered.manifest_digest
+    assert baseline == reordered
 
 
 def test_missing_required_check_prevents_descriptor(

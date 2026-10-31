@@ -1,12 +1,13 @@
 """Cross-document validation for retained metadata and active decisions."""
 
+import itertools
 from collections import defaultdict
 from collections.abc import Mapping
-from hashlib import sha256
+from datetime import date
 
 from jsonschema import ValidationError
 
-from jbt.contracts.catalog import tabular_schema
+from jbt.contracts.catalog import Column, Table, catalog, tabular_schema
 from jbt.contracts.declarations import decode_declaration, field_registry
 from jbt.contracts.primitives import ContractError, require
 from jbt.contracts.schemas import (
@@ -17,8 +18,19 @@ from jbt.contracts.schemas import (
     registry_schema,
     validate_document,
 )
-from jbt.contracts.validation import validate_link_members, validate_tables
-from jbt.domain.canonical import encode_json
+from jbt.contracts.validation import validate_tables
+from jbt.domain.errors import IdentityError, TemporalError
+from jbt.domain.guards import (
+    Guard,
+    GuardField,
+    GuardOutcome,
+    GuardReference,
+    GuardTarget,
+    evaluate_guard,
+)
+from jbt.domain.identity import AcquiredAnchor, source_record_digest
+from jbt.domain.ids import EntityId, SemanticKey
+from jbt.domain.time import Precision, SourceTimeObservation
 
 type Tables = Mapping[str, list[dict]]
 
@@ -113,34 +125,26 @@ def validate_configuration(configuration: dict, tables: Tables) -> None:
     _validate(configuration, configuration_schema(), "configuration")
     authority = defaultdict(list)
     for entry in configuration["source_authority"]:
-        _resolve(entry["scope"], entry["entity_id"], tables)
-        action = entry["fact_kind"] == "action"
         require(
-            entry["scope"]["table"] == ("commodities" if action else "accounts"),
+            sum(row["account_id"] == entry["account_id"] for row in tables["accounts"])
+            == 1,
             "authority_scope",
             "configuration.source_authority",
         )
         require(
-            (entry["coverage_basis_id"] is None) == action,
-            "authority_basis",
-            "configuration.source_authority",
-        )
-        require(
-            entry["period_start"] <= entry["period_end"],
+            entry["period_start"] < entry["period_end"],
             "authority_period",
             "configuration.source_authority",
         )
         key = (
-            entry["entity_id"],
-            entry["scope"]["table"],
-            tuple(entry["scope"]["key"]),
+            entry["account_id"],
             entry["fact_kind"],
             entry["coverage_basis_id"],
         )
         for previous in authority[key]:
             overlap = (
-                entry["period_start"] <= previous["period_end"]
-                and previous["period_start"] <= entry["period_end"]
+                entry["period_start"] < previous["period_end"]
+                and previous["period_start"] < entry["period_end"]
             )
             require(
                 not overlap,
@@ -148,13 +152,6 @@ def validate_configuration(configuration: dict, tables: Tables) -> None:
                 "configuration.source_authority",
             )
         authority[key].append(entry)
-        for source in entry["authoritative_sources"]:
-            require(
-                source["table"] in {"statements", "source_records"},
-                "authority_source",
-                "configuration.source_authority",
-            )
-            _resolve(source, entry["entity_id"], tables)
     names = set()
     targets = set()
     for mapping in configuration["rendering"]:
@@ -196,7 +193,22 @@ def validate_configuration(configuration: dict, tables: Tables) -> None:
                 )
 
 
-def validate_extraction(extract: dict) -> None:
+def _validate_source_time(value: dict) -> None:
+    try:
+        SourceTimeObservation(
+            value["timestamp_date"],
+            value["timestamp_local"],
+            value["timestamp_offset_seconds"],
+            value["timestamp_zone"],
+            Precision(value["timestamp_precision"]),
+            value["timestamp_fraction_digits"],
+        )
+    except IdentityError, TemporalError, ValueError:
+        code = "extraction_source_time"
+        raise ContractError(code, "extraction.time") from None
+
+
+def validate_extraction(extract: dict) -> None:  # noqa: C901
     """Validate source records without promoting status tokens to event state."""
     _validate(extract, extraction_schema(), "extraction")
     _unique(
@@ -204,25 +216,130 @@ def validate_extraction(extract: dict) -> None:
         ("source_record_id", "event_key", "kind"),
         "extraction.records",
     )
-    scope = extract["source_scope"]
-    if scope["source_class"] == "statement":
-        require(
-            scope["period_start"] is not None and scope["period_end"] is not None,
-            "statement_period",
-            "extraction.source_scope",
+    sections = extract["source_scope"]["sections"]
+    _unique(
+        extract["status_mappings"],
+        ("source_field", "source_token", "event_key"),
+        "extraction.status_mappings",
+    )
+    _unique(sections, ("section_id",), "extraction.sections")
+    section_by_id = {section["section_id"]: section for section in sections}
+    memberships = {
+        (record["source_section"], record["record_locator"])
+        for record in extract["records"]
+    }
+    subjects = {
+        (record["source_section"], record["source_record_id"])
+        for record in extract["records"]
+        if record["kind"] != "observation"
+    }
+    for section in sections:
+        _unique(
+            section["account_context"], ("field_name",), "extraction.account_context"
         )
-    if scope["period_start"] is not None and scope["period_end"] is not None:
-        require(
-            scope["period_start"] <= scope["period_end"],
-            "statement_period",
-            "extraction.source_scope",
-        )
+        _unique(section["evidence_parts"], ("part_key",), "extraction.evidence_parts")
+        for part in section["evidence_parts"]:
+            _unique(
+                [{"locator": locator} for locator in part["record_locators"]],
+                ("locator",),
+                "extraction.membership",
+            )
+            require(
+                all(
+                    (section["section_id"], locator) in memberships
+                    for locator in part["record_locators"]
+                ),
+                "evidence_membership",
+                "extraction.sections",
+            )
+            if part["kind"] == "movement_interval":
+                _validate_source_time(part["start"])
+                _validate_source_time(part["end"])
+                require(
+                    part["start"]["timestamp_date"] <= part["end"]["timestamp_date"],
+                    "statement_period",
+                    "extraction.sections",
+                )
+            elif part["kind"] != "observation_set":
+                _validate_source_time(part["point"])
+                require(
+                    part["meaning"]
+                    in {
+                        "balance_point": {"settled_position"},
+                        "available_balance": {"available_funds", "available_credit"},
+                        "pending_snapshot": {"pending"},
+                    }[part["kind"]],
+                    "evidence_meaning",
+                    "extraction.sections",
+                )
+    keyed = [
+        record
+        for record in extract["records"]
+        if record["kind"] == "transaction" and record["source_key"] is not None
+    ]
+    _unique(
+        keyed,
+        ("source_section", "source_key_domain", "source_key"),
+        "extraction.source_keys",
+    )
     for record in extract["records"]:
+        require(
+            record["source_section"] in section_by_id,
+            "source_section",
+            "extraction.records",
+        )
+        try:
+            expected_id = source_record_digest(
+                AcquiredAnchor(
+                    extract["source_blob_digest"],
+                    SemanticKey(extract["source_scope_id"]),
+                    SemanticKey(record["source_section"]),
+                    SemanticKey(record["record_locator"]),
+                )
+            )
+        except IdentityError as error:
+            code = "source_occurrence_identity"
+            raise ContractError(code, "extraction.records") from error
+        require(
+            record["source_record_id"] == expected_id,
+            "source_occurrence_identity",
+            "extraction.records",
+        )
+        require(
+            record["source_account_identifier"]
+            == section_by_id[record["source_section"]]["source_account_identifier"],
+            "section_account_context",
+            "extraction.records",
+        )
+        require(
+            (record["source_key_domain"] is None) == (record["source_key"] is None),
+            "source_key_pair",
+            "extraction.records",
+        )
+        correction = record["source_correction"]
+        if correction is not None:
+            require(
+                record["kind"] == "transaction"
+                and record["source_key"] is not None
+                and correction["source_key_domain"] == record["source_key_domain"],
+                "source_correction",
+                "extraction.records",
+            )
         payload = record["payload"]
+        if "timestamp_date" in payload:
+            _validate_source_time(payload)
         if record["kind"] == "transaction":
+            for time in payload["times"]:
+                _validate_source_time(time)
             _unique(payload["legs"], ("posting_key",), "extraction.legs")
             _unique(payload["times"], ("date_role",), "extraction.times")
         if record["kind"] == "observation":
+            subject = payload["subject_source_record_id"]
+            require(
+                subject is None or (record["source_section"], subject) in subjects,
+                "observation_subject",
+                "extraction.records",
+            )
             present = tuple(
                 payload[field] is not None
                 for field in ("decimal_value", "text_value", "date_value")
@@ -271,11 +388,75 @@ def _active_refs(value: object, entity: str, tables: Tables) -> None:
             _active_refs(child, entity, tables)
 
 
+def _guard_field(column: Column, value: object) -> GuardField:
+    if value is None:
+        require(column.nullable, "guard_field_null", column.name)
+        parsed = None
+    elif column.kind == "date" and isinstance(value, str):
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as error:
+            code = "guard_field_date"
+            raise ContractError(code, column.name) from error
+        require(parsed.isoformat() == value, "guard_field_date", column.name)
+    elif column.kind == "list" and isinstance(value, list):
+        require(
+            all(isinstance(item, str) for item in value),
+            "guard_field_value",
+            column.name,
+        )
+        parsed = tuple(value)
+    elif (
+        (column.kind == "string" and isinstance(value, str))
+        or (column.kind == "integer" and type(value) is int)
+        or (column.kind == "boolean" and type(value) is bool)
+    ):
+        parsed = value
+    else:
+        code = "guard_field_value"
+        raise ContractError(code, column.name)
+    return GuardField(column.name, column.kind, column.nullable, parsed)
+
+
+def _guard_key(value: object, column: Column) -> str | int | date:
+    parsed = _guard_field(column, value).value
+    if type(parsed) is bool or not isinstance(parsed, (str, int, date)):
+        code = "record_key_type"
+        raise ContractError(code, column.name)
+    return parsed
+
+
+def _guard_reference(entity: str, table: Table, key: list) -> GuardReference:
+    columns = {column.name: column for column in table.columns}
+    names = table.primary_key[1:]
+    require(len(key) == len(names), "record_key_arity", "reference")
+    return GuardReference(
+        EntityId(entity),
+        SemanticKey(table.name),
+        tuple(
+            _guard_key(value, columns[name])
+            for name, value in zip(names, key, strict=True)
+        ),
+    )
+
+
+def _guard_target(
+    reference: GuardReference, table: Table, row: dict, fields: tuple[str, ...]
+) -> GuardTarget:
+    columns = {column.name: column for column in table.columns}
+    return GuardTarget(
+        reference,
+        tuple(_guard_field(columns[name], row[name]) for name in fields if name in row),
+        active=True,
+    )
+
+
 def _active_guard(guard: dict, entity: str, tables: Tables) -> None:
     target = guard["target"]
-    row = _resolve(target, entity, tables)
-    specs = {table["name"]: table for table in tabular_schema()["tables"]}
-    columns = {column["name"]: column for column in specs[target["table"]]["columns"]}
+    specs = {table.name: table for table in catalog()}
+    require(target["table"] in specs, "record_kind", "reference")
+    table = specs[target["table"]]
+    columns = {column.name: column for column in table.columns}
     fields = guard["fields"]
     require(
         fields == sorted(set(fields), key=lambda field: field.encode("utf-8")),
@@ -288,127 +469,28 @@ def _active_guard(guard: dict, entity: str, tables: Tables) -> None:
         "guard_field_reference",
         "declarations",
     )
-    selected = [
-        {name: columns[field][name] for name in ("name", "kind", "nullable")}
-        for field in fields
-    ]
-    values = [row[field] for field in fields]
-    digest = sha256(
-        encode_json(
-            {"schema_version": 1, "columns": selected},
-            integer_strings=True,
-        )
-    )
-    digest.update(encode_json(values, integer_strings=True))
-    require(
-        digest.hexdigest() == guard["expected_digest"],
-        "guard_projection_changed",
-        "declarations",
-    )
-
-
-def _correction_journal(tables: Tables) -> dict:
-    journal = defaultdict(list)
-    corrections = {}
-    for row in tables["declarations"]:
-        payload = decode_declaration(row["payload_json"])
-        if payload["kind"] == "correction":
-            journal[row["entity_id"]].append(payload["journal_sequence"])
-            corrections[(row["entity_id"], row["declaration_id"])] = payload
-    for sequence in journal.values():
-        require(
-            sorted(sequence) == list(range(len(sequence))),
-            "journal_sequence",
-            "declarations",
-        )
-    for (entity, _), payload in corrections.items():
-        prior_id = payload["prior_declaration_id"]
-        if prior_id is None:
+    reference = _guard_reference(entity, table, target["key"])
+    reviewed = Guard(reference, tuple(fields), guard["expected_digest"])
+    targets = []
+    for row in tables[table.name]:
+        if row["entity_id"] != entity:
             continue
-        prior = corrections.get((entity, prior_id))
-        if prior is None:
-            code = "correction_prior_reference"
-            raise ContractError(code, "declarations")
+        names = table.primary_key[1:]
         require(
-            prior["journal_sequence"] < payload["journal_sequence"],
-            "correction_prior_order",
-            "declarations",
+            all(name in row for name in names), "record_key_field_missing", table.name
         )
-        if payload["operation"] == "supersede":
-            require(
-                prior["target"] == payload["target"]
-                and prior["operation"] != "retract",
-                "correction_replacement_target",
-                "declarations",
-            )
-    return corrections
-
-
-def _identity_membership(
-    row: dict, payload: dict, tables: Tables, memberships: set
-) -> None:
-    for member in payload["members"]:
-        _resolve(
-            {"table": "source_records", "key": [member["source_record_id"]]},
-            row["entity_id"],
-            tables,
-        )
-        key = (row["entity_id"], member["source_record_id"], member["event_key"])
-        require(key not in memberships, "identity_membership_disjoint", "declarations")
-        memberships.add(key)
-    for retired_id in payload["retired_ids"]:
-        identity = _resolve(
-            {
-                "table": "economic_identities",
-                "key": [payload["record_kind"], retired_id],
-            },
-            row["entity_id"],
-            tables,
-        )
-        require(
-            identity["identity_state"] == "retired"
-            and identity["decision_declaration_id"] == row["declaration_id"],
-            "identity_retirement_decision",
-            "declarations",
-        )
-        if identity["anchor_kind"] == "source_record":
-            require(
-                {
-                    "source_record_id": identity["anchor_id"],
-                    "event_key": identity["event_key"],
-                }
-                in payload["members"],
-                "identity_retired_membership",
-                "declarations",
-            )
-    require(
-        len(payload["successor_ids"]) <= 1
-        and (not payload["retired_ids"] or bool(payload["successor_ids"])),
-        "identity_survivor_unambiguous",
-        "declarations",
-    )
-    for survivor_id in payload["successor_ids"]:
-        identity = _resolve(
-            {
-                "table": "economic_identities",
-                "key": [payload["record_kind"], survivor_id],
-            },
-            row["entity_id"],
-            tables,
-        )
-        require(
-            identity["identity_state"] == "active"
-            and identity["event_key"] == payload["event_key"]
-            and identity["anchor_kind"]
-            == (
-                "source_record"
-                if payload["anchor"]["kind"] == "source_record"
-                else "declaration"
-            )
-            and identity["anchor_id"] == payload["anchor"]["id"],
-            "identity_successor_active",
-            "declarations",
-        )
+        row_reference = _guard_reference(entity, table, [row[name] for name in names])
+        if row_reference == reference:
+            targets.append(_guard_target(row_reference, table, row, reviewed.fields))
+    evaluation = evaluate_guard(reviewed, tuple(targets))
+    codes = {
+        GuardOutcome.MISSING: "guard_target_missing",
+        GuardOutcome.AMBIGUOUS: "guard_target_ambiguous",
+        GuardOutcome.INACTIVE: "guard_target_inactive",
+        GuardOutcome.CHANGED: "guard_projection_changed",
+    }
+    if evaluation.outcome != GuardOutcome.APPLIED:
+        raise ContractError(codes[evaluation.outcome], "declarations")
 
 
 def _ordering_dependency(row: dict, payload: dict, tables: Tables) -> None:
@@ -438,10 +520,7 @@ def _active_declarations(manifest: dict, tables: Tables) -> None:
     _unique(
         effective, ("entity_id", "declaration_id"), "manifest.effective_declarations"
     )
-    corrections = _correction_journal(tables)
-    keys = set()
-    memberships = set()
-    active_corrections = set()
+    revisions: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for selected in effective:
         row = _resolve(
             {"table": "declarations", "key": [selected["declaration_id"]]},
@@ -449,31 +528,23 @@ def _active_declarations(manifest: dict, tables: Tables) -> None:
             tables,
         )
         key = (row["entity_id"], row["declaration_key"])
-        require(key not in keys, "active_revision_unique", "declarations")
-        keys.add(key)
+        revisions[key].append(row)
         payload = decode_declaration(row["payload_json"])
         _active_refs(payload, row["entity_id"], tables)
-        if payload["kind"] == "correction":
-            active_corrections.add((row["entity_id"], row["declaration_id"]))
-        if payload["kind"] == "identity":
-            _identity_membership(row, payload, tables, memberships)
-        if payload["kind"] == "link":
-            validate_link_members(
-                payload["link_kind"],
-                payload["members"],
-                payload["terms_declaration_id"],
-            )
         if payload["kind"] == "ordering":
             _ordering_dependency(row, payload, tables)
         if payload["kind"] in {"booking", "position", "pool"}:
             _policy_references(payload, row["entity_id"], tables)
-    for entity, correction_id in active_corrections:
-        prior_id = corrections[(entity, correction_id)]["prior_declaration_id"]
-        require(
-            prior_id is None or (entity, prior_id) not in active_corrections,
-            "active_correction_chain",
-            "declarations",
-        )
+    for rows in revisions.values():
+        ordered = sorted(rows, key=lambda row: row["valid_from"] or "")
+        for previous, current in itertools.pairwise(ordered):
+            require(
+                previous["valid_to"] is not None
+                and current["valid_from"] is not None
+                and previous["valid_to"] <= current["valid_from"],
+                "active_revision_overlap",
+                "declarations",
+            )
 
 
 def _policy_references(payload: dict, entity: str, tables: Tables) -> None:

@@ -1,12 +1,12 @@
 """Canonical pure-value encodings for typed records and JSON documents.
 
 Each value is a one-byte tag, ASCII byte length, colon, and payload.
-NFC text uses UTF-8; integers use minimal ASCII decimal; null is distinct
+Exact text uses UTF-8; integers use minimal ASCII decimal; null is distinct
 from empty text. Lists retain order and multiplicity. Records retain
 declared field order, reject duplicate names, and carry a domain/version.
 There are no implicit maps, floating-point numbers, or line terminators.
 
-JSON documents use a separate encoding: NFC text, sorted object keys,
+JSON documents use a separate encoding: exact text, sorted object keys,
 compact separators, exact decimal integer literals, and one final LF.
 Numeric coefficient strings retain their string type; no types are coerced.
 """
@@ -14,9 +14,9 @@ Numeric coefficient strings retain their string type; no types are coerced.
 import json
 from datetime import date
 from hashlib import sha256
-from unicodedata import normalize
 
-from jbt.domain.errors import CanonicalError
+from jbt.domain.errors import CanonicalError, IdentityError
+from jbt.domain.ids import validate_key
 from jbt.domain.numbers import ExactDecimal
 
 type CanonicalValue = (
@@ -25,6 +25,13 @@ type CanonicalValue = (
 type JsonValue = bool | int | str | list[JsonValue] | dict[str, JsonValue] | None
 _FIELD_ARITY = 2
 _MAX_JSON_DEPTH = 64
+
+
+def _identifier(value: str, location: str) -> None:
+    try:
+        validate_key(value, location)
+    except IdentityError as error:
+        raise CanonicalError(constraint=error.constraint, location=location) from error
 
 
 def _frame(tag: bytes, payload: bytes) -> bytes:
@@ -45,7 +52,7 @@ def encode(value: CanonicalValue) -> bytes:
         return _frame(b"i", str(value).encode("ascii"))
     if isinstance(value, str):
         try:
-            payload = normalize("NFC", value).encode("utf-8")
+            payload = value.encode("utf-8")
         except UnicodeEncodeError as error:
             raise CanonicalError(
                 constraint="utf8_required", location="canonical.text"
@@ -66,6 +73,7 @@ def encode_record(domain: str, fields: tuple[tuple[str, CanonicalValue], ...]) -
     """Encode a domain-separated record with explicit ordered typed fields."""
     if not isinstance(domain, str) or not domain:
         raise CanonicalError(constraint="domain_required", location="canonical.record")
+    _identifier(domain, "canonical.record.domain")
     if not isinstance(fields, tuple) or any(
         not isinstance(field, tuple)
         or len(field) != _FIELD_ARITY
@@ -75,7 +83,9 @@ def encode_record(domain: str, fields: tuple[tuple[str, CanonicalValue], ...]) -
         raise CanonicalError(
             constraint="ordered_typed_fields_required", location="canonical.record"
         )
-    names = tuple(normalize("NFC", name) for name, _ in fields)
+    names = tuple(name for name, _ in fields)
+    for name in names:
+        _identifier(name, "canonical.record.field")
     if any(not name for name in names) or len(set(names)) != len(names):
         raise CanonicalError(
             constraint="unique_field_names_required", location="canonical.record"
@@ -89,14 +99,13 @@ def digest_record(domain: str, fields: tuple[tuple[str, CanonicalValue], ...]) -
 
 
 def _json_text(value: str) -> str:
-    normalized = normalize("NFC", value)
     try:
-        normalized.encode("utf-8")
+        value.encode("utf-8")
     except UnicodeEncodeError as error:
         raise CanonicalError(
             constraint="utf8_required", location="canonical.json"
         ) from error
-    return normalized
+    return value
 
 
 def _json_object(
@@ -108,12 +117,8 @@ def _json_object(
             raise CanonicalError(
                 constraint="json_string_key_required", location="canonical.json"
             )
-        normalized = _json_text(key)
-        if normalized in result:
-            raise CanonicalError(
-                constraint="normalized_key_collision", location="canonical.json"
-            )
-        result[normalized] = _json_value(
+        _identifier(key, "canonical.json.key")
+        result[key] = _json_value(
             item, active, depth + 1, integer_strings=integer_strings
         )
     return result
@@ -154,7 +159,7 @@ def _json_value(
 
 
 def encode_json(value: object, *, integer_strings: bool) -> bytes:
-    """Encode a validated JSON-compatible value as NFC UTF-8 plus one LF.
+    """Encode exact JSON-compatible text as UTF-8 plus one LF.
 
     Object keys sort by Unicode scalar value, equivalently UTF-8 bytes.
     Lists retain order and duplicates. Integers are signed INT64 decimal

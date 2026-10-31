@@ -15,9 +15,11 @@ ROOT = Path(__file__).resolve().parents[3]
     [
         "jbt",
         "jbt.artifacts",
+        "jbt.checks",
         "jbt.contracts",
         "jbt.domain",
         "jbt.importers",
+        "jbt.model",
         "jbt.runtime",
         "jbt.storage",
     ],
@@ -46,21 +48,33 @@ def test_package_import_does_not_load_native_adapters(package: str) -> None:
 def test_internal_imports_follow_owning_boundaries() -> None:
     allowed = {
         "domain": {"domain"},
+        "model": {"domain", "model"},
+        "checks": {"domain", "checks"},
         "contracts": {"domain", "contracts"},
         "artifacts": {"domain", "contracts", "artifacts"},
-        "importers": {"domain", "contracts", "artifacts", "importers"},
+        "extraction": {"domain", "contracts", "extraction"},
+        "importers": {"domain", "extraction", "importers"},
         "storage": {"domain", "contracts", "artifacts", "storage"},
         "runtime": {
             "domain",
             "contracts",
             "artifacts",
-            "importers",
+            "extraction",
             "storage",
             "runtime",
+            "model",
+            "checks",
         },
+        "cli": {"domain", "contracts", "artifacts", "extraction", "storage", "runtime"},
     }
     for owner, dependencies in allowed.items():
-        for path in (ROOT / "src" / "jbt" / owner).rglob("*.py"):
+        location = ROOT / "src" / "jbt" / owner
+        paths = (
+            location.rglob("*.py")
+            if location.is_dir()
+            else (location.with_suffix(".py"),)
+        )
+        for path in paths:
             for node in ast.walk(ast.parse(path.read_text())):
                 imports = []
                 if isinstance(node, ast.Import):
@@ -79,7 +93,10 @@ def test_internal_imports_follow_owning_boundaries() -> None:
                         )
 
 
-def test_domain_imports_only_pure_standard_library_and_domain() -> None:
+@pytest.mark.parametrize("owner", ["domain", "model", "checks"])
+def test_core_imports_only_pure_standard_library_and_owning_modules(
+    owner: str,
+) -> None:
     forbidden = {
         "os",
         "pathlib",
@@ -94,7 +111,7 @@ def test_domain_imports_only_pure_standard_library_and_domain() -> None:
         "ctypes",
         "multiprocessing",
     }
-    for path in (ROOT / "src" / "jbt" / "domain").rglob("*.py"):
+    for path in (ROOT / "src" / "jbt" / owner).rglob("*.py"):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             imports: list[str] = []
@@ -106,7 +123,8 @@ def test_domain_imports_only_pure_standard_library_and_domain() -> None:
                 top = imported.split(".")[0]
                 assert top not in forbidden, (path.name, imported)
                 assert (
-                    imported.startswith("jbt.domain.") or top in sys.stdlib_module_names
+                    imported.startswith(("jbt.domain.", f"jbt.{owner}."))
+                    or top in sys.stdlib_module_names
                 ), (path.name, imported)
 
 

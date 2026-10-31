@@ -100,7 +100,7 @@ For mixed consideration, exchange ten Q with principal 100 for five R assigned p
 
 One account holds a +100 USD claim against X and a -40 USD obligation to Y. A complete position assertion has two rows and checks each relationship. A net assertion of 60 has a different scope and cannot pass either gross check. A model with +110 and -50 passes the net check but fails both gross checks. A complete empty position set fails if any in-scope position is nonzero; a partial set never asserts omitted positions are zero.
 
-For identity, start with singleton acquisition A and add confirming statement B. Explicit membership retains A's anchor even if B becomes authoritative for facts. Clean reconstruction from the final inputs, reversed acquisition order, and a prior incremental build produce the same event, leg, and root-lot IDs. Adding B without the required decision fails rather than selecting a new anchor. Revised values fail existing correction guards without re-identifying the event.
+For keyless identity, start with singleton acquisition A and add confirming statement B. Explicit membership retains A's anchor even if B becomes authoritative for facts. Clean reconstruction from the final inputs, reversed acquisition order, and a prior incremental build produce the same event, leg, and root-lot IDs. Adding B without the required decision fails rather than selecting a new anchor. Revised values fail existing correction guards without re-identifying the event.
 
 Also exercise explicit merge and split decisions: retired IDs remain addressable, redirects do not apply corrections automatically, contradictory membership and retirement cycles fail, and raw evidence persists. Reacquiring identical bytes in one source namespace adds no occurrence; binding identical bytes to distinct genuine contexts does not collapse them. An authored fact keeps its stable anchor when its payload revision changes.
 
@@ -144,6 +144,19 @@ Use a statement with opening 100.00, credit 20.00, debit 5.00, and closing 115.0
 | Drop the debit during model merge | Source check passes, model check fails |
 | Omit both a +5.00 and -5.00 transaction | Arithmetic can pass; occurrence/coverage checks remain independently required |
 | Two identical purchases on one day | Both survive unless source identity proves they are repeated observations |
+| Two compatible rolling downloads with the same scoped key and event key | One source-keyed event without a membership decision; distinct blob-anchored occurrences remain in `source_records`, with selected and confirming `event_support`; reversed acquisition order preserves IDs |
+| Identical purchases with distinct keys in one domain | Two events; equal facts do not merge distinct key families |
+| The same key text in different scopes, sections, or key domains | Distinct default anchors; response order and resolved account names do not supply the section |
+| One scoped key is reused for a different purchase | Conflict remains unresolved until an occurrence decision separates the named occurrence/component under an acquired anchor; remaining observations stay in the original key family |
+| Key-family B is explicitly merged into A, then another download observes B | The future B occurrence supports A; B's default ID remains retired; a correction targeting B does not follow retirement automatically |
+| Source-stated replacement names the prior key | Evidenced key-family correspondence preserves the canonical identity without a membership decision; replaced assertions and observations remain inspectable |
+| Explicit membership admits pending and posted observations with different component keys | One canonical event; `event_support.event_key` retains each source component key, not a copy of the canonical key |
+| An active acquired occurrence anchor's original component loses support | Publication fails even if another member supplies selected facts; retirement may move all members to a survivor without inventing support on the retired event |
+| A merged key family's original key evidence is missing or rewritten to the survivor's key | Publication fails; retain original domain/key pairs and evidence matching every field of each canonical source-key tuple |
+| One acquired occurrence/component is assigned to two events | Publication fails even if field provenance and arithmetic are otherwise consistent; distinct components of one source record may support different events |
+| Acquired support becomes eclipsed or replaced | Evidence remains; active non-retracted acquired events require selected support; retracted/retired events retain only replaced support and no book steps |
+| An authored event has no acquired source occurrence | Declaration evidence is sufficient; no invented source record or event support |
+| Importer adds or removes economic key support | Interpretation review exposes changed identity; no silent rebinding of correction targets |
 | Overlapping downloads plus a complete statement | Duplicates resolve with retained provenance; declared authority applies only to its covered scope |
 | Two authoritative statements disagree | Review required; arrival order does not pick a winner |
 | Reissue retracts an item; later statement instead posts a reversal | Retraction and new reversal produce different histories |
@@ -268,6 +281,6 @@ The [analysis boundary](./analysis-boundary.md) owns consumer requirements. Its 
 
 ## Contract coverage
 
-The [contract conformance reference](../developer/architecture.md#contract-conformance) describes the representation proof; the [coverage index](../../tests/integration/conformance/fixtures/index.json) maps this inventory to executable checks and later processor work. Later stages make the corresponding processors executable. Source acquisition can retain evidence before its processor is available; attempting to publish results that require that processor reports the missing capability.
+The [contract conformance reference](../developer/architecture.md#contract-conformance) describes the representation proof. Source acquisition can retain evidence before its processor is available; attempting to publish results that require that processor reports the missing capability.
 
 Hand-calculate financial expectations, check conservation independently, vary input order, and include counterexamples where internally consistent output is still wrong. Update expected artifacts only after explaining the semantic change.

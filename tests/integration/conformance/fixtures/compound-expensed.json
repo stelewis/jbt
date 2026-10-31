@@ -361,7 +361,7 @@
             "member_kind": "posting",
             "member_id": "@move-out",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           },
           {
             "link_id": "@move-link",
@@ -369,7 +369,7 @@
             "member_kind": "posting",
             "member_id": "@move-in",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           }
         ],
         "inventory_fee_changes": [

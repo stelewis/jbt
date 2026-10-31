@@ -1,6 +1,7 @@
+from dataclasses import FrozenInstanceError, replace
 from datetime import date
 from hashlib import sha256
-from itertools import permutations
+from typing import cast
 
 import pytest
 
@@ -8,72 +9,167 @@ from jbt.domain.errors import IdentityError
 from jbt.domain.identity import (
     AcquiredAnchor,
     AuthoredAnchor,
-    IdentityDecision,
-    IdentityReview,
-    Membership,
     Occurrence,
-    Retirement,
+    SourceKeyAnchor,
     child_id,
     declaration_id,
     event_id,
     revision_id,
+    source_record_digest,
     successor_lot_id,
-    validate_membership,
-    validate_retirements,
-    validate_transition,
 )
 from jbt.domain.ids import EntityId, RecordKind, SemanticKey
 
 
+@pytest.mark.golden
+def test_source_record_digest_has_format_independent_acquired_framing() -> None:
+    literal = (
+        b"JBT\x00l186:s13:source-recordi1:1l160:l83:s11:blob_digests64:"
+        + b"a" * 64
+        + b"l19:s9:namespaces4:feedl20:s7:sections7:account"
+        b"l22:s7:locators9:csv:row:2"
+    )
+    anchor = AcquiredAnchor(
+        "a" * 64,
+        SemanticKey("feed"),
+        SemanticKey("account"),
+        SemanticKey("csv:row:2"),
+    )
+    assert source_record_digest(anchor) == sha256(literal).hexdigest()
+
+
+@pytest.mark.parametrize("value", [None, "untyped", 1])
+def test_source_record_digest_requires_acquired_anchor(value: object) -> None:
+    with pytest.raises(IdentityError, match="acquired_anchor_required"):
+        source_record_digest(cast("AcquiredAnchor", value))
+
+
 @pytest.fixture
-def occurrences() -> tuple[Occurrence, Occurrence, Occurrence]:
-    first, second, third = (
-        Occurrence(
-            AcquiredAnchor(
-                digest * 64,
-                SemanticKey("synthetic-binding"),
-                SemanticKey("account-section"),
-                SemanticKey("csv:row:2"),
-            ),
-            SemanticKey("purchase"),
-        )
-        for digest in ("a", "b", "c")
+def source_key_anchor() -> SourceKeyAnchor:
+    return SourceKeyAnchor(
+        SemanticKey("feed"),
+        SemanticKey("account"),
+        SemanticKey("fitid"),
+        SemanticKey("tx-1"),
     )
-    return first, second, third
 
 
-def test_extra_support_and_acquisition_history_do_not_reidentify(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
+@pytest.mark.golden
+def test_source_key_anchor_independently_framed_identity(
+    source_key_anchor: SourceKeyAnchor,
 ) -> None:
-    first, second, third = occurrences
-    entity = EntityId("synthetic")
-    canonical_id = event_id(entity, first)
-    leg = child_id(canonical_id, RecordKind.LEG, SemanticKey("asset"))
-    root = child_id(leg, RecordKind.LOT, SemanticKey("acquisition"))
-    for acquisition_order in permutations(occurrences):
-        decision = IdentityDecision(
-            first, acquisition_order, (SemanticKey("reviewed-bank-reference"),)
-        )
-        result = validate_membership(
-            entity,
-            (*acquisition_order, first),
-            (decision,),
-            required_correspondences=((first, second, third),),
-        )
-        assert {item.event for item in result} == {canonical_id}
-        assert len(result) == 3
-        assert child_id(canonical_id, RecordKind.LEG, SemanticKey("asset")) == leg
-        assert child_id(leg, RecordKind.LOT, SemanticKey("acquisition")) == root
-    singleton = validate_membership(
-        entity, (first, first), (), required_correspondences=()
+    literal = (
+        b"JBT\x00l164:s17:economic-identityi1:1l134:"
+        b"l21:s6:entitys9:synthetic"
+        b"l15:s4:kinds5:event"
+        b"l59:s6:anchorl46:s10:source_keys4:feeds7:accounts5:fitids4:tx-1"
+        b"l23:s9:event_keys8:purchase"
     )
-    assert singleton == (Membership(first, canonical_id),)
+    identifier = event_id(
+        EntityId("synthetic"), Occurrence(source_key_anchor, SemanticKey("purchase"))
+    )
+    assert identifier.entity == EntityId("synthetic")
+    assert identifier.kind is RecordKind.EVENT
+    assert identifier.value == sha256(literal).hexdigest()
+
+
+@pytest.mark.golden
+def test_acquired_anchor_independently_framed_identity_is_unchanged() -> None:
+    literal = (
+        b"JBT\x00l228:s17:economic-identityi1:1l198:"
+        b"l21:s6:entitys9:synthetic"
+        b"l15:s4:kinds5:event"
+        b"l122:s6:anchorl108:s8:acquireds64:"
+        + (b"a" * 64)
+        + b"s4:feeds7:accounts9:csv:row:2"
+        b"l23:s9:event_keys8:purchase"
+    )
+    anchor = AcquiredAnchor(
+        "a" * 64,
+        SemanticKey("feed"),
+        SemanticKey("account"),
+        SemanticKey("csv:row:2"),
+    )
+    identifier = event_id(
+        EntityId("synthetic"), Occurrence(anchor, SemanticKey("purchase"))
+    )
+    assert identifier.value == sha256(literal).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "dimension", ["namespace", "section", "key_domain", "source_key"]
+)
+@pytest.mark.parametrize("value", ["untyped", None, 1])
+def test_source_key_anchor_rejects_untyped_dimensions(
+    source_key_anchor: SourceKeyAnchor, dimension: str, value: object
+) -> None:
+    with pytest.raises(IdentityError, match="typed_anchor_keys_required"):
+        replace(source_key_anchor, **{dimension: cast("SemanticKey", value)})
+
+
+@pytest.mark.parametrize("value", ["purchase", None, 1])
+def test_source_key_occurrence_rejects_untyped_event_key(
+    source_key_anchor: SourceKeyAnchor, value: object
+) -> None:
+    with pytest.raises(IdentityError, match="typed_occurrence_required"):
+        Occurrence(source_key_anchor, cast("SemanticKey", value))
+
+
+def test_source_key_anchor_is_frozen(source_key_anchor: SourceKeyAnchor) -> None:
+    with pytest.raises(FrozenInstanceError):
+        source_key_anchor.namespace = SemanticKey("changed")  # ty: ignore[invalid-assignment]
+
+
+@pytest.mark.parametrize(
+    "dimension", ["namespace", "section", "key_domain", "source_key"]
+)
+def test_source_key_identity_changes_with_each_anchor_dimension(
+    source_key_anchor: SourceKeyAnchor, dimension: str
+) -> None:
+    entity = EntityId("synthetic")
+    event_key = SemanticKey("purchase")
+    changed = replace(source_key_anchor, **{dimension: SemanticKey("different")})
+    assert event_id(entity, Occurrence(changed, event_key)) != event_id(
+        entity, Occurrence(source_key_anchor, event_key)
+    )
+
+
+def test_source_key_identity_changes_with_event_key(
+    source_key_anchor: SourceKeyAnchor,
+) -> None:
+    entity = EntityId("synthetic")
+    assert event_id(
+        entity, Occurrence(source_key_anchor, SemanticKey("purchase"))
+    ) != event_id(entity, Occurrence(source_key_anchor, SemanticKey("fee")))
+
+
+@pytest.mark.parametrize(
+    "excluded", ["amount", "importer", "order", "blob_digest", "locator"]
+)
+def test_source_key_anchor_excludes_facts_and_occurrence_context(
+    source_key_anchor: SourceKeyAnchor, excluded: str
+) -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        replace(source_key_anchor, **{excluded: SemanticKey("not-an-anchor-key")})
+
+
+@pytest.fixture
+def acquired_occurrence() -> Occurrence:
+    return Occurrence(
+        AcquiredAnchor(
+            "a" * 64,
+            SemanticKey("synthetic-binding"),
+            SemanticKey("account-section"),
+            SemanticKey("csv:row:2"),
+        ),
+        SemanticKey("purchase"),
+    )
 
 
 def test_same_bytes_in_distinct_scopes_and_source_components_remain_distinct(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
+    acquired_occurrence: Occurrence,
 ) -> None:
-    original = occurrences[0]
+    original = acquired_occurrence
     assert isinstance(original.anchor, AcquiredAnchor)
     alternate = Occurrence(
         AcquiredAnchor(
@@ -90,9 +186,9 @@ def test_same_bytes_in_distinct_scopes_and_source_components_remain_distinct(
 
 
 def test_identical_purchases_at_distinct_locators_remain_distinct(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
+    acquired_occurrence: Occurrence,
 ) -> None:
-    first = occurrences[0]
+    first = acquired_occurrence
     assert isinstance(first.anchor, AcquiredAnchor)
     second = Occurrence(
         AcquiredAnchor(
@@ -103,140 +199,8 @@ def test_identical_purchases_at_distinct_locators_remain_distinct(
         ),
         first.event_key,
     )
-    result = validate_membership(
-        EntityId("synthetic"), (first, second), (), required_correspondences=()
-    )
-    assert len({member.event for member in result}) == 2
-
-
-def test_missing_overlap_decision_or_retained_anchor_fails(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
-) -> None:
-    first, second, _ = occurrences
-    decision = IdentityDecision(first, (first, second), (SemanticKey("review"),))
-    with pytest.raises(IdentityError, match="explicit_membership_required"):
-        validate_membership(
-            EntityId("synthetic"),
-            (first, second),
-            (),
-            required_correspondences=((first, second),),
-        )
-    with pytest.raises(IdentityError, match="missing_retained_anchor"):
-        validate_membership(
-            EntityId("synthetic"), (first,), (decision,), required_correspondences=()
-        )
-    with pytest.raises(IdentityError, match="contradictory_membership"):
-        validate_membership(
-            EntityId("synthetic"),
-            (first, second),
-            (decision, decision),
-            required_correspondences=(),
-        )
-
-
-def test_identity_decisions_reject_ambiguous_or_unreviewed_membership(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
-) -> None:
-    first, second, _ = occurrences
-    with pytest.raises(IdentityError, match="canonical_unique_members"):
-        IdentityDecision(first, (second,), (SemanticKey("review"),))
-    with pytest.raises(IdentityError, match="canonical_unique_members"):
-        IdentityDecision(first, (first, first), (SemanticKey("review"),))
-    with pytest.raises(IdentityError, match="reviewed_discriminants"):
-        IdentityDecision(first, (first, second), ())
-
-
-def test_merge_and_split_require_retirement_and_affected_review(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
-) -> None:
-    first, second, _ = occurrences
     entity = EntityId("synthetic")
-    first_id, second_id = event_id(entity, first), event_id(entity, second)
-    before = (Membership(first, first_id), Membership(second, second_id))
-    merged = (Membership(first, first_id), Membership(second, first_id))
-    retirement = Retirement(second_id, first_id)
-    affected = frozenset({child_id(second_id, RecordKind.LEG, SemanticKey("cash"))})
-    with pytest.raises(IdentityError, match="explicit_retirement_required"):
-        validate_transition(
-            before,
-            merged,
-            (),
-            prior_retirements=(),
-            review=IdentityReview(affected, affected),
-        )
-    with pytest.raises(IdentityError, match="unreviewed_affected_targets"):
-        validate_transition(
-            before,
-            merged,
-            (retirement,),
-            prior_retirements=(),
-            review=IdentityReview(affected, frozenset()),
-        )
-    validate_transition(
-        before,
-        merged,
-        (retirement,),
-        prior_retirements=(),
-        review=IdentityReview(affected, affected),
-    )
-    with pytest.raises(IdentityError, match="retired_identity_reuse"):
-        validate_transition(
-            merged,
-            before,
-            (),
-            prior_retirements=(retirement,),
-            review=IdentityReview(affected, affected),
-        )
-    validate_transition(
-        merged,
-        before,
-        (),
-        prior_retirements=(),
-        review=IdentityReview(affected, affected),
-    )
-
-
-def test_retirement_history_stays_addressable_and_acyclic(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
-) -> None:
-    first, second, third = (
-        event_id(EntityId("synthetic"), item) for item in occurrences
-    )
-    chain = (Retirement(first, second), Retirement(second, third))
-    validate_retirements(chain, history=frozenset({first, second, third}))
-    with pytest.raises(IdentityError, match="retirement_cycle"):
-        validate_retirements(
-            (*chain, Retirement(third, first)),
-            history=frozenset({first, second, third}),
-        )
-    with pytest.raises(IdentityError, match="missing_retirement_history"):
-        validate_retirements(chain, history=frozenset({first, third}))
-    with pytest.raises(IdentityError, match="multiple_retirement_survivors"):
-        validate_retirements(
-            (Retirement(first, second), Retirement(first, third)),
-            history=frozenset({first, second, third}),
-        )
-
-
-def test_split_can_explicitly_retire_old_anchor(
-    occurrences: tuple[Occurrence, Occurrence, Occurrence],
-) -> None:
-    first, second, third = occurrences
-    entity = EntityId("synthetic")
-    original, left, right = (event_id(entity, item) for item in occurrences)
-    merged = tuple(Membership(item, original) for item in occurrences)
-    split = (
-        Membership(first, left),
-        Membership(second, left),
-        Membership(third, right),
-    )
-    validate_transition(
-        merged,
-        split,
-        (Retirement(original, left),),
-        prior_retirements=(),
-        review=IdentityReview(frozenset({original}), frozenset({original})),
-    )
+    assert event_id(entity, first) != event_id(entity, second)
 
 
 def test_revision_changes_meaning_not_stable_declaration_identity() -> None:

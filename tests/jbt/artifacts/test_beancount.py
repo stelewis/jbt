@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import date
 
 import pytest
+from beancount import loader
 
 from jbt.artifacts.beancount import (
     BeancountPolicy,
@@ -13,6 +14,39 @@ from jbt.artifacts.beancount import (
 type MutableTables = dict[str, list[dict[str, object]]]
 
 
+@pytest.mark.parametrize("subject_kind", ["transaction", "posting"])
+def test_document_links_render_blob_digests_not_recovery_paths(
+    tables: MutableTables,
+    policy: BeancountPolicy,
+    subject_kind: str,
+) -> None:
+    subject_id = (
+        str(tables["transactions"][0]["txn_id"])
+        if subject_kind == "transaction"
+        else str(tables["postings"][0]["posting_id"])
+    )
+    digest = "a" * 64
+    tables["links"] = [
+        {
+            "entity_id": "entity",
+            "link_id": "receipt",
+            "link_kind": "document",
+            "member_kind": kind,
+            "member_id": identity,
+            "member_role": role,
+        }
+        for kind, identity, role in (
+            (subject_kind, subject_id, "subject"),
+            ("blob", digest, "evidence"),
+        )
+    ]
+    output = render_beancount(tables, policy=policy)
+    assert "document_blob_digests:" in output
+    assert digest in output
+    assert " document " not in output
+    assert not loader.load_string(output)[1]
+
+
 def test_exact_midnight_point_requires_unambiguous_order(
     tables: MutableTables,
     policy: BeancountPolicy,
@@ -21,7 +55,7 @@ def test_exact_midnight_point_requires_unambiguous_order(
         {
             "entity_id": "entity",
             "account_id": "bank",
-            "civil_zone": "Etc/UTC",
+            "civil_zone": "America/New_York",
         }
     ]
     tables["assertion_scopes"] = [
@@ -42,9 +76,10 @@ def test_exact_midnight_point_requires_unambiguous_order(
             "date": "2025-01-02",
             "is_complete": False,
             "timestamp_date": "2025-01-02",
-            "timestamp_local": "00:00:00",
-            "timestamp_precision": "second",
-            "timestamp_offset_minutes": 0,
+            "timestamp_local": "00:00",
+            "timestamp_precision": "minute",
+            "timestamp_offset_minutes": -300,
+            "timestamp_zone": "America/New_York",
             "timestamp_fraction_digits": None,
         }
     ]
@@ -107,6 +142,7 @@ def tables() -> MutableTables:
                 "entity_id": "entity",
                 "txn_id": "initial",
                 "event_state": "recognized",
+                "review_state": "reviewed",
                 "event_kind": "opening",
                 "date_posted": "2025-01-01",
                 "payee": None,

@@ -3,11 +3,13 @@ import runpy
 import subprocess
 import sys
 import tarfile
-import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 from zipfile import ZipFile
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _METADATA = b"Metadata-Version: 2.4\nName: jbt\nVersion: 1.0\n\n"
 _PROJECT = b'[project]\nname = "jbt"\nversion = "1.0"\n'
@@ -114,29 +116,33 @@ def test_standard_distributions_need_no_custom_provenance(tmp_path: Path) -> Non
     _check(*_release(tmp_path))
 
 
-def test_final_wheel_option_is_registered_before_default_collection() -> None:
-    with tempfile.NamedTemporaryFile(
-        dir=Path.cwd(), prefix=".release-wheel-option-", suffix=".whl"
-    ) as wheel:
-        result = subprocess.run(  # noqa: S603 - collect tests, never execute the fixture
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "--collect-only",
-                "-q",
-                "-m",
-                "e2e",
-                "--release-wheel",
-                wheel.name,
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+def test_final_wheel_option_is_registered_before_ordinary_collection(
+    tmp_path: Path,
+) -> None:
+    wheel = tmp_path / "selected.whl"
+    wheel.touch()
+    selected = (
+        "tests/integration/test_release.py"
+        "::test_standard_distributions_need_no_custom_provenance"
+    )
+    result = subprocess.run(  # noqa: S603 - collect tests, never execute the fixture
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            selected,
+            "--release-wheel",
+            str(wheel),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert result.returncode == 0, result.stderr
-    assert "tests/e2e/test_cash_execution.py::" in result.stdout
+    assert selected in result.stdout
 
 
 @pytest.mark.parametrize("archive", ["wheel", "source"])

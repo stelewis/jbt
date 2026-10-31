@@ -30,11 +30,11 @@ Record Python implementation/version, platform/architecture, and normalized name
 
 Under one project-wide advisory writer lock, acquisition copies evidence without deleting the source, installs verified content-addressed bytes, and durably records the acquisition context. A retry key recovers the same request; a new accession records an intentional new acquisition.
 
-Before computation, retain the exact authored bytes, selected committed accessions, execution record, and explicit comparison pin. Keep captured failed-attempt selections. Recovery uses that expected inventory; missing evidence or receipts fail even with a warm cache. Financial roots retain inputs and results, not interpreters, packages, copied source, or the repository lock.
+Before computation, retain the exact authored bytes, selected committed accessions, execution record, explicit comparison pin, and committed [decision-journal head](0013-decision-journal-and-review-basis.md#commit-a-durable-head-over-immutable-entries). Capture validates that head against all earlier retained heads; recovery pins it rather than scanning the live journal. Keep captured failed-attempt selections and their immutable review reports. Recovery uses that expected inventory; missing evidence, committed entries, or receipts fail even with a warm cache. Financial roots retain inputs and results, not interpreters, packages, copied source, or the repository lock.
 
 ### Publish only complete immutable generations
 
-Hold the writer lock through input capture, computation, and publication. Validate and synchronize every output, install a complete immutable generation on the same filesystem, then atomically replace the current reference. Readers pin one descriptor and verify its exact file inventory.
+Hold the writer lock through input capture, computation, and publication. Each attempt retains its [review report](0013-decision-journal-and-review-basis.md#retain-one-review-basis-per-attempt); unresolved records stay there rather than becoming partial financial tables. A certified generation pins the deterministic financial input selection, not the invocation witness or report seal. Validate and synchronize every output, install a complete immutable generation on the same filesystem, then atomically replace the current reference. Readers pin one descriptor and verify its exact file inventory.
 
 The project-wide lock serializes local writers and avoids distributed coordination the current workload does not need.
 

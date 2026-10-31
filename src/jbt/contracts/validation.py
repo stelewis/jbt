@@ -2,19 +2,27 @@
 
 import json
 import re
-import unicodedata
 from collections import defaultdict
 from collections.abc import Mapping
-from datetime import date
+from datetime import date, timedelta
 from fractions import Fraction
+from itertools import pairwise
 
 from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.declarations import decode_declaration
-from jbt.contracts.primitives import ContractError, number, require, validate_number
+from jbt.contracts.primitives import (
+    ContractError,
+    number,
+    require,
+    validate_identifier,
+    validate_number,
+    validate_text,
+)
 from jbt.domain.identity import (
     AcquiredAnchor,
     AuthoredAnchor,
     Occurrence,
+    SourceKeyAnchor,
     child_id,
     event_id,
     revision_id,
@@ -26,18 +34,14 @@ type Row = dict
 type Tables = Mapping[str, list[Row]]
 
 MAX_OFFSET_MINUTES = 1439
+SOURCE_KEY_ARITY = 4
 
 
 def _text_scalar(value: object, kind: str, location: str) -> str:
     if not isinstance(value, str):
         code = "physical_type"
         raise ContractError(code, location)
-    require(unicodedata.normalize("NFC", value) == value, "text_nfc", location)
-    try:
-        value.encode("utf-8")
-    except UnicodeEncodeError as error:
-        msg = "text_utf8"
-        raise ContractError(msg, location) from error
+    validate_text(value, location)
     if kind == "date":
         require(
             re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is not None,
@@ -59,8 +63,8 @@ def _scalar(value: object, column: dict, location: str) -> None:
     kind = column["kind"]
     if kind in {"string", "date"}:
         value = _text_scalar(value, kind, location)
-        if column["name"].endswith(("_id", "_key", "_digest")):
-            require(bool(value), "empty_identifier", location)
+        if kind == "string" and column["text_semantics"] == "identifier":
+            validate_identifier(value, location)
     elif kind == "integer":
         require(
             type(value) is int and -(2**63) <= value < 2**63, "physical_type", location
@@ -73,7 +77,14 @@ def _scalar(value: object, column: dict, location: str) -> None:
             raise ContractError(code, location)
         for item in value:
             _scalar(
-                item, {"name": "item_id", "kind": "string", "nullable": False}, location
+                item,
+                {
+                    "name": "item",
+                    "kind": "string",
+                    "nullable": False,
+                    "text_semantics": column["text_semantics"],
+                },
+                location,
             )
         require(value == sorted(set(value)), "list_order_unique", location)
     if "enum" in column:
@@ -434,7 +445,6 @@ def _participation(tables: Tables, indexes: dict) -> None:
             )
         for fields in (
             ("price_per_unit_coefficient", "price_commodity_id"),
-            ("original_amount_coefficient", "original_commodity_id"),
             (
                 "fx_rate_as_stated_coefficient",
                 "fx_base_commodity_id",
@@ -442,6 +452,12 @@ def _participation(tables: Tables, indexes: dict) -> None:
             ),
         ):
             _together(row, fields, "postings")
+        require(
+            row["original_amount_coefficient"] is None
+            or row["original_commodity_id"] is not None,
+            "original_amount_commodity",
+            "postings",
+        )
     totals = defaultdict(Fraction)
     for weight in tables["posting_weights"]:
         posting = _lookup(indexes, "postings", weight, "posting_id")
@@ -798,7 +814,10 @@ def _event_times(tables: Tables, indexes: dict) -> None:
             "event_time_mode",
             "event_times",
         )
-        if row["date_role"] != "occurred" and row["time_mode"] == "value":
+        if (
+            row["date_role"] not in {"occurred", "initiated"}
+            and row["time_mode"] == "value"
+        ):
             field = f"date_{row['date_role']}"
             effective = target[field]
             if (
@@ -1002,6 +1021,42 @@ def _symbol_resolution(tables: Tables) -> None:
 
 
 def _statements(tables: Tables) -> None:
+    grouped = defaultdict(list)
+    statements = {
+        (row["entity_id"], row["statement_id"]): row for row in tables["statements"]
+    }
+    for row in tables["statement_coverage"]:
+        statement = statements[(row["entity_id"], row["statement_id"])]
+        require(
+            row["period_start"] < row["period_end"]
+            and statement["period_start"] is not None
+            and statement["period_start"] <= row["period_start"]
+            and statement["period_end"] is not None
+            and row["period_end"]
+            <= (
+                date.fromisoformat(statement["period_end"]) + timedelta(days=1)
+            ).isoformat(),
+            "statement_coverage_period",
+            "statement_coverage",
+        )
+        grouped[
+            (
+                row["entity_id"],
+                row["statement_id"],
+                row["part_key"],
+                row["coverage_basis"],
+            )
+        ].append(row)
+    for segments in grouped.values():
+        ordered = sorted(segments, key=lambda row: row["period_start"])
+        require(
+            all(
+                left["period_end"] <= right["period_start"]
+                for left, right in pairwise(ordered)
+            ),
+            "statement_coverage_overlap",
+            "statement_coverage",
+        )
     for row in tables["statements"]:
         if row["source_class"] == "statement":
             require(
@@ -1015,7 +1070,7 @@ def _statements(tables: Tables) -> None:
                 "statement_period",
                 "statements",
             )
-        if row["source_format"] == "authored":
+        if row["importer_id"] is None:
             require(
                 row["declaration_id"] is not None, "authored_statement", "statements"
             )
@@ -1212,14 +1267,66 @@ def _evidence(tables: Tables, indexes: dict, specs: dict) -> None:
                 indexes["declarations"][(row["entity_id"], row["evidence_id"])][
                     "declaration_kind"
                 ]
-                == "correction",
+                in {
+                    "assign",
+                    "split",
+                    "identity",
+                    "statement_revision",
+                    "transfer",
+                    "link",
+                },
                 "correction_evidence",
                 "provenance",
             )
-    _economic_identities(tables, indexes)
+
+
+def _source_key_fields(row: Row) -> list[str]:
+    try:
+        fields = json.loads(row["anchor_id"])
+    except json.JSONDecodeError as error:
+        msg = "source_key_anchor_encoding"
+        raise ContractError(msg, "economic_identities") from error
+    require(
+        isinstance(fields, list)
+        and len(fields) == SOURCE_KEY_ARITY
+        and all(isinstance(value, str) and value for value in fields)
+        and json.dumps(fields, ensure_ascii=False, separators=(",", ":"))
+        == row["anchor_id"],
+        "source_key_anchor_encoding",
+        "economic_identities",
+    )
+    return fields
+
+
+def _source_key_index(tables: Tables) -> dict[tuple[str, ...], set[str]]:
+    keys = defaultdict(set)
+    for source in tables["source_records"]:
+        require(
+            (source["source_key_domain"] is None) == (source["source_key"] is None),
+            "source_key_pair",
+            "source_records",
+        )
+        if source["source_key_domain"] is not None:
+            keys[
+                (
+                    source["entity_id"],
+                    source["source_scope_id"],
+                    source["source_section"],
+                    source["source_key_domain"],
+                    source["source_key"],
+                )
+            ].add(source["source_record_id"])
+    return keys
 
 
 def _economic_identities(tables: Tables, indexes: dict) -> None:
+    source_keys = (
+        _source_key_index(tables)
+        if any(
+            row["anchor_kind"] == "source_key" for row in tables["economic_identities"]
+        )
+        else {}
+    )
     for row in tables["economic_identities"]:
         target = {
             "transaction": "transactions",
@@ -1255,6 +1362,26 @@ def _economic_identities(tables: Tables, indexes: dict) -> None:
                     "economic_identity_canonical",
                     "economic_identities",
                 )
+        elif row["anchor_kind"] == "source_key":
+            fields = _source_key_fields(row)
+            require(
+                (row["entity_id"], *fields) in source_keys,
+                "identity_anchor",
+                "economic_identities",
+            )
+            if row["record_kind"] == "transaction":
+                canonical = event_id(
+                    EntityId(row["entity_id"]),
+                    Occurrence(
+                        SourceKeyAnchor(*(SemanticKey(value) for value in fields)),
+                        SemanticKey(row["event_key"]),
+                    ),
+                )
+                require(
+                    row["record_id"] == canonical.value,
+                    "economic_identity_canonical",
+                    "economic_identities",
+                )
         else:
             require(
                 any(
@@ -1278,6 +1405,13 @@ def _economic_identities(tables: Tables, indexes: dict) -> None:
                     "economic_identity_canonical",
                     "economic_identities",
                 )
+        if row["decision_declaration_id"] is not None:
+            decision = _lookup(indexes, "declarations", row, "decision_declaration_id")
+            require(
+                decision["declaration_kind"] == "identity",
+                "identity_decision_kind",
+                "economic_identities",
+            )
         if row["identity_state"] == "retired":
             event = indexes[target][(row["entity_id"], row["record_id"])]
             if target == "corporate_actions":
@@ -1286,6 +1420,78 @@ def _economic_identities(tables: Tables, indexes: dict) -> None:
                 event["event_state"] == "retracted",
                 "retired_event",
                 "economic_identities",
+            )
+
+
+def _event_support(tables: Tables, indexes: dict) -> None:
+    source_keys = _source_key_index(tables)
+    for event in tables["transactions"]:
+        require(
+            (event["entity_id"], "transaction", event["txn_id"])
+            in indexes["economic_identities"],
+            "economic_identity_required",
+            "transactions",
+        )
+    support = defaultdict(list)
+    for row in tables["event_support"]:
+        key = (row["entity_id"], "transaction", row["txn_id"])
+        identity = indexes["economic_identities"].get(key)
+        require(identity is not None, "event_support_identity", "event_support")
+        require(
+            identity["identity_state"] == "active",
+            "event_support_active_identity",
+            "event_support",
+        )
+        event = _lookup(indexes, "transactions", row, "txn_id")
+        require(
+            event["event_state"] != "retracted" or row["support_kind"] == "replaced",
+            "event_support_retracted",
+            "event_support",
+        )
+        require(
+            identity["anchor_kind"] != "declaration",
+            "event_support_acquired",
+            "event_support",
+        )
+        support[key].append(row)
+    for row in tables["economic_identities"]:
+        if (
+            row["record_kind"] != "transaction"
+            or row["anchor_kind"] == "declaration"
+            or row["identity_state"] == "retired"
+        ):
+            continue
+        key = (row["entity_id"], row["record_kind"], row["record_id"])
+        members = support[key]
+        require(bool(members), "event_support_required", "event_support")
+        if row["anchor_kind"] == "source_record":
+            require(
+                any(
+                    member["source_record_id"] == row["anchor_id"]
+                    and member["event_key"] == row["event_key"]
+                    for member in members
+                ),
+                "event_support_anchor",
+                "event_support",
+            )
+        else:
+            fields = _source_key_fields(row)
+            anchors = source_keys[(row["entity_id"], *fields)]
+            require(
+                any(
+                    member["source_record_id"] in anchors
+                    and member["event_key"] == row["event_key"]
+                    for member in members
+                ),
+                "event_support_anchor",
+                "event_support",
+            )
+        event = indexes["transactions"][(row["entity_id"], row["record_id"])]
+        if event["event_state"] != "retracted":
+            require(
+                any(member["support_kind"] == "selected" for member in members),
+                "event_support_selected",
+                "event_support",
             )
 
 
@@ -1682,16 +1888,12 @@ def validate_link_members(kind: str, members: list[dict], terms: str | None) -> 
             "outgoing": ({"posting"}, 1, None),
             "incoming": ({"posting"}, 1, None),
         },
-        "card_payment": {
-            "payment": ({"posting"}, 1, None),
-            "credit": ({"posting"}, 1, None),
-        },
         "settlement": {
             "trade": ({"transaction"}, 1, None),
             "settlement": ({"transaction"}, 1, None),
         },
         "document": {
-            "subject": ({"transaction", "posting", "lot", "commodity"}, 1, None),
+            "subject": ({"transaction", "posting"}, 1, None),
             "evidence": ({"blob"}, 1, None),
         },
         "lot_transfer": {
@@ -1724,7 +1926,7 @@ def validate_link_members(kind: str, members: list[dict], terms: str | None) -> 
         )
         counts[role] += 1
         identity = (member["kind"], member["id"])
-        if kind in {"trade_chain", "complete_set"}:
+        if kind in {"transfer", "document", "trade_chain", "complete_set"}:
             require(identity not in distinct, "link_distinct_members", "links")
         distinct.add(identity)
     for role, (_, minimum, maximum) in rules[kind].items():
@@ -1760,6 +1962,8 @@ def _links_and_applications(tables: Tables, indexes: dict) -> None:
             )
     for rows in groups.values():
         first = rows[0]
+        if first["link_kind"] == "transfer":
+            require(first["origin"] == "correction", "transfer_link_origin", "links")
         require(
             all(
                 (r["link_kind"], r["origin"], r["terms_declaration_id"])
@@ -1961,6 +2165,8 @@ def validate_tables(tables: Tables) -> None:
     _statements(tables)
     _commodities_and_actions(tables, indexes)
     _action_effects(tables)
+    _economic_identities(tables, indexes)
+    _event_support(tables, indexes)
     _evidence(tables, indexes, specs)
     _fees(tables, indexes)
     _inventory_fees(tables, indexes)

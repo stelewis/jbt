@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 
 [[package]]
@@ -248,6 +248,7 @@ dependencies = [
     { name = "beancount" },
     { name = "jsonschema" },
     { name = "pyarrow" },
+    { name = "tzdata" },
 ]
 
 [package.dev-dependencies]
@@ -269,6 +270,7 @@ requires-dist = [
     { name = "beancount", specifier = ">=3.2.3" },
     { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "pyarrow", specifier = ">=25.0.1" },
+    { name = "tzdata", specifier = ">=2026.5" },
 ]
 
 [package.metadata.requires-dev]
@@ -281,7 +283,7 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "ruff", specifier = ">=0.16.9" },
-    { name = "tqlint", specifier = ">=0.12.0" },
+    { name = "tqlint", specifier = ">=0.13.0" },
     { name = "ty", specifier = ">=0.0.84" },
 ]
 
@@ -808,14 +810,14 @@ wheels = [
 
 [[package]]
 name = "tqlint"
-version = "0.12.0"
+version = "0.13.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6c/ce/3e63879c44f62b58cdd2b667d2d43d77e7c13f190088c1166c698884937e/tqlint-0.12.0.tar.gz", hash = "sha256:80e7c92a5914992da334ce76543f5851f485782aaecf2a1f3445bde477a72b79", size = 38456, upload-time = "2026-08-14T07:50:46.871Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/f8/64a6a7f381e5b3cc537d3f002f04c0b197ca65c204f4ce3f46c2fc1effa8/tqlint-0.13.0.tar.gz", hash = "sha256:80fc5e8d201e129ff8163c677d21c75fc096d4be9e556ce4944239788c9ccbde", size = 41135, upload-time = "2026-10-27T05:22:28.895Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/d7/098e804a2aa1cc0d99fe223b204cbd48adb4addeebfe29ccaaceece8a4da/tqlint-0.12.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:57b37ad8ea3497abf26a8d5e67a543be4aac63ca433db008c33ce2429f9df2fd", size = 640895, upload-time = "2026-08-14T07:50:41.68Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/17/3074fcaacf7c1664ef1500279b1cc63b1d253234f19e7cdaa18f5e184566/tqlint-0.12.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:d55496baf98bdfed1c7cfe1f9d74c11cfbc3722c38f6af966b20597009ac06c3", size = 613220, upload-time = "2026-08-14T07:50:43.111Z" },
-    { url = "https://files.pythonhosted.org/packages/ee/ab/8722400576a52b538326008f218f2520eddb19f916de7b3c98798a71da7e/tqlint-0.12.0-py3-none-manylinux_2_31_x86_64.whl", hash = "sha256:59ca2bb1e34db482a0cbe5815fd4897306818e9b395cbffc1c50187c166cea80", size = 679648, upload-time = "2026-08-14T07:50:44.364Z" },
-    { url = "https://files.pythonhosted.org/packages/22/18/e95044f46194abebf7e8dab81fc00ea2713018757d2570157e6380d0287b/tqlint-0.12.0-py3-none-win_amd64.whl", hash = "sha256:54f8154e0d22b5f85c4da89e9a59b9d2917f54e7bbd5c223a01c7a94e0a160e5", size = 570732, upload-time = "2026-08-14T07:50:45.61Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/47/44fbbe596b04e4e87dd290f49db6914d9f15e2153dea83928acabb46412c/tqlint-0.13.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:e18bf2b3b8afb59ad62c3823c5edbbf5850b7eefcbcfd2a98b3a317f55e4762d", size = 664740, upload-time = "2026-10-27T05:22:22.879Z" },
+    { url = "https://files.pythonhosted.org/packages/50/97/347ac361ffd62937738a6059db1112f880cc941f56da2825e1ff0de21c58/tqlint-0.13.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:16287db202f8ad126dd01706e3e86b6b1293251d39b7428b39ca6292dfccb239", size = 631852, upload-time = "2026-10-27T05:22:24.466Z" },
+    { url = "https://files.pythonhosted.org/packages/01/2d/5424d6b4b8a128eb7928ca8f855ac813552a2b90d6bb8d7609c88d80fabb/tqlint-0.13.0-py3-none-manylinux_2_31_x86_64.whl", hash = "sha256:7b643fa2bce371517c564b62cfbab4f4e15133f76565aff6bc4aa7aed7c5481c", size = 702231, upload-time = "2026-10-27T05:22:25.851Z" },
+    { url = "https://files.pythonhosted.org/packages/09/8c/aff4b2c279711c184461d55a91524a60856a7cc2710fbffb161f5904a348/tqlint-0.13.0-py3-none-win_amd64.whl", hash = "sha256:12fb4fb687e44f8670b5c461ade11ee2e83cfb49e7945cfd9e2a518422ad6d3e", size = 601723, upload-time = "2026-10-27T05:22:27.872Z" },
 ]
 
 [[package]]
@@ -841,6 +843,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/f4/ae7dbd118425c850981d23efb850f0d9d7f6b8d2b852bde2767434f668b4/ty-0.0.84-py3-none-win32.whl", hash = "sha256:4bdc85f91cbaae35825f2b17bb4ac5de0563367875cb0f42b2bf07a1bf7ff2ba", size = 13176439, upload-time = "2026-09-24T13:16:15.049Z" },
     { url = "https://files.pythonhosted.org/packages/29/ec/994d87252f065dda5a500bc8afc726d18f6582d81d6f4ff1feb8a267c800/ty-0.0.84-py3-none-win_amd64.whl", hash = "sha256:71cc9aa7a7c89d4e12c6a814e9c0c3310ad5bee44efedbd6f5a42d91e9ac0f0d", size = 13962879, upload-time = "2026-09-24T13:16:18.191Z" },
     { url = "https://files.pythonhosted.org/packages/6d/1c/e6e91852b72566b1ab9aca504712857dfb89324c12092a5bd61d42d34427/ty-0.0.84-py3-none-win_arm64.whl", hash = "sha256:6c9d3718c4a0d318bc9c92af9b2aa85c3294e7dff54cf1d69ad79568f56516da", size = 13656453, upload-time = "2026-09-24T13:16:21.51Z" },
+]
+
+[[package]]
+name = "tzdata"
+version = "2026.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/68/f1b440335057bfce71b6e50a9d09445aa2ecbd08359a337976627b8409e7/tzdata-2026.5.tar.gz", hash = "sha256:8cc73c0a0bfca7dbfa59235d60b2eff82231dee33f53d206db1acd9173cfc0a7", size = 200404, upload-time = "2026-10-03T09:23:14.143Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/21/1e5995a1c920cce14e4bffae20c665ec10e7ed03ab25e006cd741092b718/tzdata-2026.5-py2.py3-none-any.whl", hash = "sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac", size = 347996, upload-time = "2026-10-03T09:23:12.535Z" },
 ]
 
 [[package]]

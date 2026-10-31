@@ -2,10 +2,14 @@
 
 import json
 from dataclasses import dataclass
+from functools import cache
 from importlib.resources import files
 from typing import Literal
 
+from jbt.contracts.primitives import require
+
 type ColumnKind = Literal["string", "integer", "boolean", "date", "list"]
+type TextSemantics = Literal["identifier", "descriptive"]
 
 
 @dataclass(frozen=True)
@@ -15,6 +19,17 @@ class Column:
     name: str
     kind: ColumnKind
     nullable: bool
+    text_semantics: TextSemantics | None
+
+    def __post_init__(self) -> None:
+        """Reject missing text metadata and metadata on nontext columns."""
+        require(
+            self.text_semantics in {"identifier", "descriptive"}
+            if self.kind in {"string", "list"}
+            else self.text_semantics is None,
+            "column_text_semantics",
+            self.name,
+        )
 
 
 @dataclass(frozen=True)
@@ -29,6 +44,11 @@ class Table:
 
 def tabular_schema() -> dict:
     """Return the expanded schema of the published tabular snapshot."""
+    return json.loads(_schema_json())
+
+
+@cache
+def _schema_json() -> str:
     raw = json.loads(
         files("jbt.contracts").joinpath("resources/catalog.json").read_text()
     )
@@ -43,8 +63,23 @@ def tabular_schema() -> dict:
     primary_keys = {spec["name"]: spec["primary_key"] for spec in raw["tables"]}
     for spec in raw["tables"]:
         logical = {"entity_id": "string", **spec["fields"]}
+        semantics = {
+            field: meaning
+            for meaning, fields in raw["text_semantics"]["tables"][spec["name"]].items()
+            for field in fields
+        }
+        semantics["entity_id"] = raw["text_semantics"]["entity_id"]
         for bundle in spec.get("bundles", []):
             logical.update(raw["bundles"][bundle])
+            semantics.update(
+                {
+                    field: meaning
+                    for meaning, fields in raw["text_semantics"]["bundles"][
+                        bundle
+                    ].items()
+                    for field in fields
+                }
+            )
         columns, groups = [], []
         for name, encoding in logical.items():
             nullable = encoding.endswith("?")
@@ -57,6 +92,9 @@ def tabular_schema() -> dict:
                             "name": f"{name}_coefficient",
                             "kind": "string",
                             "nullable": nullable,
+                            "text_semantics": raw["text_semantics"][
+                                "decimal_coefficient"
+                            ],
                         },
                         {
                             "name": f"{name}_scale",
@@ -72,6 +110,13 @@ def tabular_schema() -> dict:
                 )
                 continue
             column = {"name": name, "kind": kind, "nullable": nullable}
+            if kind in {"string", "list"}:
+                column["text_semantics"] = semantics[name]
+                require(
+                    semantics[name] in {"identifier", "descriptive"},
+                    "column_text_semantics",
+                    f"{spec['name']}.{name}",
+                )
             enum = raw["enums"].get(f"{spec['name']}.{name}")
             if name.endswith("_mode") and name.startswith("date_"):
                 enum = ["inherit", "value", "unknown"]
@@ -101,15 +146,24 @@ def tabular_schema() -> dict:
                 "foreign_keys": refs,
             }
         )
-    return result
+    return json.dumps(result)
 
 
+@cache
 def catalog() -> tuple[Table, ...]:
     """Return every required table, including the build relation."""
     return tuple(
         Table(
             spec["name"],
-            tuple(Column(c["name"], c["kind"], c["nullable"]) for c in spec["columns"]),
+            tuple(
+                Column(
+                    c["name"],
+                    c["kind"],
+                    c["nullable"],
+                    c["text_semantics"] if c["kind"] in {"string", "list"} else None,
+                )
+                for c in spec["columns"]
+            ),
             tuple(spec["primary_key"]),
             tuple(spec["sort_key"]),
         )

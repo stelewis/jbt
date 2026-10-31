@@ -3,9 +3,11 @@
 import json
 import platform
 import re
+from annotationlib import Format
 from dataclasses import dataclass
 from hashlib import sha256
 from importlib import metadata
+from inspect import signature
 from typing import cast
 
 from jsonschema import ValidationError
@@ -13,6 +15,13 @@ from jsonschema import ValidationError
 from jbt.contracts.primitives import ContractError, require, validate_json_values
 from jbt.contracts.schemas import execution_record_schema, validate_document
 from jbt.domain.canonical import encode_json
+from jbt.domain.ids import SemanticKey
+from jbt.extraction import (
+    CONTRACT_VERSION,
+    ExtractionContext,
+    ExtractionError,
+    Importer,
+)
 
 _NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z", re.ASCII)
 _SEPARATORS = re.compile(r"[-_.]+")
@@ -80,6 +89,22 @@ def decode_execution(payload: bytes) -> ObservedExecution:
         "producer_distribution",
         "execution.producer",
     )
+    importers = document["importers"]
+    identifiers = [item["importer_id"] for item in importers]
+    require(
+        identifiers == sorted(set(identifiers)),
+        "importer_order_unique",
+        "execution.importers",
+    )
+    for item in importers:
+        for field in ("importer_id", "profile"):
+            SemanticKey(item[field])
+        require(
+            {"name": item["distribution"], "version": item["version"]}
+            in document["distributions"],
+            "importer_distribution",
+            "execution.importers",
+        )
     return ObservedExecution(
         payload,
         sha256(payload).hexdigest(),
@@ -89,7 +114,8 @@ def decode_execution(payload: bytes) -> ObservedExecution:
                 integer_strings=False,
             )
         ).hexdigest(),
-        producer["kind"] == "release",
+        producer["kind"] == "release"
+        and all(item["kind"] == "release" for item in document["importers"]),
         producer["version"],
     )
 
@@ -202,7 +228,80 @@ def observe_execution() -> ObservedExecution:
                     "architecture": platform.machine(),
                 },
                 "distributions": sorted(records, key=lambda record: record["name"]),
+                "importers": [],
             },
             integer_strings=False,
         )
+    )
+
+
+def select_importers(
+    execution: ObservedExecution, names: tuple[str, ...]
+) -> tuple[ObservedExecution, dict[str, Importer]]:
+    """Resolve every name from metadata before loading only selected adapters."""
+    selected = {}
+    entries = metadata.entry_points(group="jbt.importers")
+    for name in sorted(set(names)):
+        SemanticKey(name)
+        matches = [entry for entry in entries if entry.name == name]
+        require(bool(matches), "importer_missing", name)
+        require(len(matches) == 1, "importer_duplicate", name)
+        entry = matches[0]
+        require(entry.dist is not None, "importer_distribution_missing", name)
+        distribution = cast("metadata.Distribution", entry.dist)
+        owner = _distribution_record(distribution)
+        provenance = _producer(distribution, owner["version"])
+        selected[name] = (entry, owner, provenance)
+    plugins = {}
+    records = []
+    for name, (entry, owner, provenance) in selected.items():
+        try:
+            plugin = entry.load()
+        except ImportError, AttributeError, ValueError, TypeError:
+            code = "importer_load"
+            raise ExtractionError(code, name) from None
+        require(isinstance(plugin, Importer), "importer_protocol", name)
+        require(callable(plugin.extract), "importer_protocol", name)
+        try:
+            signature(plugin.extract, annotation_format=Format.STRING).bind(
+                b"", ExtractionContext("preflight", "0" * 64, name)
+            )
+        except TypeError, ValueError:
+            code = "importer_protocol"
+            raise ContractError(code, name) from None
+        require(
+            type(plugin.contract_version) is int
+            and plugin.contract_version == CONTRACT_VERSION,
+            "importer_contract_version",
+            name,
+        )
+        require(
+            type(plugin.profile) is str
+            and bool(plugin.profile)
+            and type(plugin.profile_version) is int
+            and plugin.profile_version > 0
+            and type(plugin.maximum_bytes) is int
+            and plugin.maximum_bytes > 0,
+            "importer_profile",
+            name,
+        )
+        SemanticKey(plugin.profile)
+        plugins[name] = plugin
+        records.append(
+            {
+                "importer_id": name,
+                "distribution": owner["name"],
+                "version": owner["version"],
+                "kind": provenance["kind"],
+                "profile": plugin.profile,
+                "profile_version": plugin.profile_version,
+                "contract_version": plugin.contract_version,
+                "maximum_bytes": plugin.maximum_bytes,
+            }
+        )
+    document = execution.document()
+    document["importers"] = records
+    return (
+        decode_execution(encode_json(document, integer_strings=False)),
+        plugins,
     )

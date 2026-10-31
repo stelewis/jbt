@@ -5,7 +5,6 @@ from hashlib import sha256
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import pytest
-from tests.integration.conformance.breadth import FAMILIES, family_cases
 from tests.integration.conformance.corpus import load_case as load_specimen
 from tests.integration.conformance.reader import ReaderError, replay_rows, validate_rows
 
@@ -25,6 +24,7 @@ class FamilyCase(Protocol):
 
 
 pytestmark = [pytest.mark.integration, pytest.mark.golden]
+FAMILIES = ("options", "claims", "obligations", "perpetual", "onchain")
 
 
 def load_case(name: str) -> FamilyCase:
@@ -44,14 +44,6 @@ def _amount(row: Row, field: str) -> Fraction:
     number = _number(row, field)
     assert number is not None
     return number
-
-
-def test_family_selection_uses_the_shared_corpus_loader() -> None:
-    cases = family_cases()
-    assert {case.case_id for case in cases} == {
-        "breadth/" + family for family in FAMILIES
-    }
-    assert all(case.domain_records and case.oracle_notes for case in cases)
 
 
 @pytest.mark.parametrize(

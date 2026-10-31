@@ -3,16 +3,54 @@
 from __future__ import annotations
 
 import json
-from functools import lru_cache
+from functools import lru_cache, wraps
 from typing import TYPE_CHECKING
 
 from jsonschema import Draft202012Validator, FormatChecker
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from jsonschema.protocols import Validator
 
 from jbt.contracts.catalog import tabular_schema
-from jbt.contracts.primitives import validate_json_values
+from jbt.contracts.primitives import (
+    ContractError,
+    validate_identifier,
+    validate_json_values,
+)
+from jbt.domain.errors import TemporalError
+from jbt.domain.time import validate_source_date
+
+_FORMATS = FormatChecker()
+
+
+def _isolated_schema(factory: Callable[[], dict]) -> Callable[[], dict]:
+    """Cache construction while returning a fresh mutable document."""
+
+    @lru_cache(maxsize=1)
+    def encoded() -> str:
+        return json.dumps(factory(), sort_keys=True, separators=(",", ":"))
+
+    @wraps(factory)
+    def fresh() -> dict:
+        return json.loads(encoded())
+
+    return fresh
+
+
+@_FORMATS.checks("identifier", raises=ContractError)
+def _identifier_format(value: object) -> bool:
+    if isinstance(value, str):
+        validate_identifier(value, "document.identifier")
+    return True
+
+
+@_FORMATS.checks("source-date", raises=TemporalError)
+def _source_date_format(value: object) -> bool:
+    if isinstance(value, str):
+        validate_source_date(value)
+    return True
 
 
 def _object(properties: dict) -> dict:
@@ -71,24 +109,43 @@ def _table_fields(name: str, *, exclude: tuple[str, ...] = ()) -> dict:
         if field == "entity_id" or field in exclude:
             continue
         value = _ref(kinds[kind.removesuffix("?")])
+        if field in columns and columns[field]["kind"] in {"string", "list"}:
+            semantics = columns[field]["text_semantics"]
+            value = _ref(
+                {
+                    ("string", "identifier"): "ID",
+                    ("string", "descriptive"): "S",
+                    ("list", "identifier"): "L",
+                    ("list", "descriptive"): "TL",
+                }[(columns[field]["kind"], semantics)]
+            )
         if field in columns and "enum" in columns[field]:
             value = {"enum": columns[field]["enum"]}
         result[field] = _nullable(value) if kind.endswith("?") else value
     return result
 
 
+@_isolated_schema
 def _common_definitions() -> dict:
     definitions = {
-        "S": {"type": "string"},
-        "ID": {"type": "string", "minLength": 1},
+        "S": {"type": "string", "text_semantics": "descriptive"},
+        "ID": {
+            "type": "string",
+            "minLength": 1,
+            "format": "identifier",
+            "text_semantics": "identifier",
+        },
         "I": {"type": "integer", "minimum": -(2**63), "maximum": 2**63 - 1},
         "B": {"type": "boolean"},
         "D": {"type": "string", "format": "date", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
         "L": {"type": "array", "items": _ref("ID"), "uniqueItems": True},
+        "TL": {"type": "array", "items": _ref("S"), "uniqueItems": True},
         "Digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "Path": {
             "type": "string",
             "minLength": 1,
+            "format": "identifier",
+            "text_semantics": "identifier",
             "pattern": r"^(?!/)(?!.*(?:^|/)\.\.?(?:/|$))(?!.*\\)[^:]+$",
         },
         "N": _object(
@@ -107,7 +164,7 @@ def _common_definitions() -> dict:
         "EvidenceRef": _shape("kind:source_record/declaration id:ID"),
         "StepRef": _shape("txn_id:ID step_key:ID"),
         "Binding": _shape(
-            "source_scope_id:ID source_section:S source_position_key:ID?"
+            "source_scope_id:ID source_section:ID source_position_key:ID?"
         ),
         "Rounding": _object(
             {
@@ -159,12 +216,15 @@ def _common_definitions() -> dict:
         ]
     }
     definitions["Assignment"] = _shape("field:ID value:TypedValue")
-    definitions["Selection"] = _shape("position_id:ID lot_id:ID units:N")
+    definitions["RuleMatchValue"] = {
+        "anyOf": [_ref("TypedValue"), _array(_ref("TypedValue"))]
+    }
     return definitions
 
 
+@_isolated_schema
 def _declaration_definitions() -> dict:
-    defs = {}
+    defs: dict[str, dict] = {}
 
     def variant(kind: str, fields: dict) -> None:
         defs[kind] = _object(
@@ -181,11 +241,36 @@ def _declaration_definitions() -> dict:
             **_table_fields("accounts", exclude=("declaration_id",)),
             "bindings": _array(_ref("Binding")),
             "publication_lag_days": {"type": "integer", "minimum": 0},
-            "period_rule": _enum("calendar/explicit/none"),
+            "period_rule": _enum("calendar/monthly_cycle/explicit/none"),
             "expected_periods": _array(_shape("start:D end:D due:D")),
             "coverage_basis_ids": _ref("L"),
         },
     )
+    defs["account"]["properties"].update(
+        {
+            "cycle_end_day": {"type": "integer", "minimum": 1, "maximum": 31},
+            "closing_tolerance_days": {"type": "integer", "minimum": 0, "maximum": 13},
+        }
+    )
+    defs["account"]["required"] = [
+        key
+        for key in defs["account"]["properties"]
+        if key not in {"cycle_end_day", "closing_tolerance_days"}
+    ]
+    defs["account"]["allOf"] = [
+        {
+            "if": {"properties": {"period_rule": {"const": "monthly_cycle"}}},
+            "then": {"required": ["cycle_end_day", "closing_tolerance_days"]},
+            "else": {
+                "not": {
+                    "anyOf": [
+                        {"required": ["cycle_end_day"]},
+                        {"required": ["closing_tolerance_days"]},
+                    ]
+                }
+            },
+        }
+    ]
     variant("category", _table_fields("categories", exclude=("declaration_id",)))
     variant(
         "commodity",
@@ -258,25 +343,6 @@ def _declaration_definitions() -> dict:
         },
     )
     variant(
-        "link",
-        {
-            **_fields("link_id:ID terms_declaration_id:ID?"),
-            "link_kind": {
-                "enum": next(
-                    c["enum"]
-                    for t in tabular_schema()["tables"]
-                    if t["name"] == "links"
-                    for c in t["columns"]
-                    if c["name"] == "link_kind"
-                )
-            },
-            "members": _array(
-                _shape("role:ID kind:transaction/posting/blob/lot/commodity id:ID")
-            ),
-            "evidence": _array(_ref("EvidenceRef")),
-        },
-    )
-    variant(
         "booking",
         {
             **_fields(
@@ -326,18 +392,6 @@ def _declaration_definitions() -> dict:
         },
     )
     variant(
-        "identity",
-        {
-            **_fields(
-                "record_kind:transaction/corporate_action event_key:ID "
-                "authored_keys:L retired_ids:L successor_ids:L reason:S"
-            ),
-            "anchor": _shape("kind:source_record/authored_key id:ID"),
-            "members": _array(_shape("source_record_id:ID event_key:ID")),
-            "guards": _array(_ref("Guard")),
-        },
-    )
-    variant(
         "ordering",
         {
             **_fields("before:StepRef after:StepRef reason:S"),
@@ -350,23 +404,10 @@ def _declaration_definitions() -> dict:
         {
             "order": {"type": "integer", "minimum": 0},
             "matches": _array(
-                _shape("field:ID operator:equals/in/contains value:TypedValue")
+                _shape("field:ID operator:equals/in/contains value:RuleMatchValue")
             ),
             "assignments": _array(_ref("Assignment")),
             "split": _array(_shape("child_key:ID amount:N category_id:ID?")),
-        },
-    )
-    variant(
-        "correction",
-        {
-            **_fields(
-                "operation:assign/select_lots/supersede/retract target:RecordRef? "
-                "prior_declaration_id:ID? reason:S"
-            ),
-            "journal_sequence": {"type": "integer", "minimum": 0},
-            "guards": _array(_ref("Guard")),
-            "assignments": _array(_ref("Assignment")),
-            "selection": _array(_ref("Selection")),
         },
     )
     defs.update(_terms_definitions())
@@ -431,6 +472,7 @@ def _declaration_definitions() -> dict:
     return defs
 
 
+@_isolated_schema
 def _terms_definitions() -> dict:
     payoff = [
         _object(
@@ -524,9 +566,25 @@ def _terms_definitions() -> dict:
     }
 
 
+@_isolated_schema
 def declaration_schema() -> dict:
     """Return the closed union of all supported declaration payloads."""
     defs = {**_common_definitions(), **_declaration_definitions()}
+    custody = journal_entry_schema()
+    for kind in (
+        "assign",
+        "split",
+        "identity",
+        "statement_revision",
+        "transfer",
+        "link",
+    ):
+        defs[kind] = {
+            key: value
+            for key, value in custody.items()
+            if key not in {"$schema", "$defs"}
+        }
+        defs[kind]["properties"] = {**custody["properties"], "kind": {"const": kind}}
     kinds = next(
         c["enum"]
         for t in tabular_schema()["tables"]
@@ -541,6 +599,230 @@ def declaration_schema() -> dict:
     }
 
 
+@_isolated_schema
+def journal_entry_schema() -> dict:
+    """Describe immutable custody metadata for a retained decision body."""
+    definitions = _common_definitions()
+    digest = _ref("Digest")
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+            **{name: definitions[name] for name in ("ID", "S")},
+            "Digest": {
+                **definitions["Digest"],
+                "minLength": 64,
+                "maxLength": 64,
+            },
+        },
+        **_object(
+            {
+                "schema_version": {"type": "integer", "const": 1},
+                "sequence": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2**63 - 1,
+                },
+                "previous_entry_digest": _nullable(digest),
+                "entity_id": _ref("ID"),
+                "declaration_key": _ref("ID"),
+                "kind": _enum("assign/split/identity/statement_revision/transfer/link"),
+                "operation": _enum("record/supersede/retract"),
+                "prior_entry_digest": _nullable(digest),
+                "reviewed_attempt_digest": digest,
+                "reason": {**_ref("S"), "minLength": 1},
+                "payload_digest": _nullable(digest),
+            }
+        ),
+        "allOf": [
+            {
+                "if": {"properties": {"sequence": {"const": 1}}},
+                "then": {"properties": {"previous_entry_digest": {"type": "null"}}},
+                "else": {"properties": {"previous_entry_digest": digest}},
+            },
+            {
+                "if": {"properties": {"operation": {"const": "record"}}},
+                "then": {"properties": {"prior_entry_digest": {"type": "null"}}},
+                "else": {"properties": {"prior_entry_digest": digest}},
+            },
+            {
+                "if": {"properties": {"operation": {"const": "retract"}}},
+                "then": {"properties": {"payload_digest": {"type": "null"}}},
+                "else": {"properties": {"payload_digest": digest}},
+            },
+        ],
+    }
+
+
+@_isolated_schema
+def journal_head_schema() -> dict:
+    """Describe an empty journal or its exact committed sequence and digest."""
+    digest = {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "minLength": 64,
+        "maxLength": 64,
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        **_object(
+            {
+                "schema_version": {"type": "integer", "const": 1},
+                "sequence": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2**63 - 1,
+                },
+                "entry_digest": _nullable(digest),
+            }
+        ),
+        "if": {"properties": {"sequence": {"const": 0}}},
+        "then": {"properties": {"entry_digest": {"type": "null"}}},
+        "else": {"properties": {"entry_digest": digest}},
+    }
+
+
+@_isolated_schema
+def decision_body_schema() -> dict:
+    """Describe closed reviewed operations, without caller-selected guards."""
+    source = _common_definitions()
+    definitions = {
+        name: source[name]
+        for name in (
+            "S",
+            "ID",
+            "D",
+            "L",
+            "Digest",
+            "N",
+        )
+    }
+    definitions["TL"] = _common_definitions()["TL"]
+    definitions["ReviewBasisRef"] = _shape("attempt_digest:Digest basis_digest:Digest")
+    definitions["EventRef"] = _shape("entity_id:ID event_id:Digest")
+    definitions["LegRef"] = _shape("entity_id:ID leg_id:Digest")
+    definitions["TargetRef"] = {"oneOf": [_ref("EventRef"), _ref("LegRef")]}
+    definitions["DateRole"] = _enum("authorized/traded/posted/settled/value")
+    definitions["LegDate"] = {
+        **_object(
+            {"mode": _enum("inherit/value/unknown"), "value": _nullable(_ref("D"))}
+        ),
+        "if": {"properties": {"mode": {"const": "value"}}},
+        "then": {"properties": {"value": _ref("D")}},
+        "else": {"properties": {"value": {"type": "null"}}},
+    }
+
+    def action(kind: str, fields: dict) -> dict:
+        return _object({"kind": {"const": kind}, **fields})
+
+    event_assignments = [
+        action(
+            "event_text",
+            {"field": _enum("payee/narration"), "value": _nullable(_ref("S"))},
+        ),
+        action("event_tags", {"tags": _ref("TL")}),
+        action("event_review", {"state": _enum("reviewed/unreviewed/ignored")}),
+        action("event_state", {"state": {"const": "cancelled"}}),
+        action("event_date", {"role": _ref("DateRole"), "value": _nullable(_ref("D"))}),
+    ]
+    leg_assignments = [
+        action("leg_category", {"category_id": _nullable(_ref("ID"))}),
+        action("leg_date", {"role": _ref("DateRole"), "date": _ref("LegDate")}),
+    ]
+    definitions["Assignment"] = {"oneOf": [*event_assignments, *leg_assignments]}
+    definitions["SplitChild"] = _shape("child_key:ID amount:N")
+
+    def body(kind: str, fields: dict) -> dict:
+        return _object(
+            {
+                "schema_version": {"type": "integer", "const": 1},
+                "kind": {"const": kind},
+                **_fields("entity_id:ID review:ReviewBasisRef"),
+                **fields,
+            }
+        )
+
+    assign = {
+        **body(
+            "assign",
+            {
+                "target": _ref("TargetRef"),
+                "assignments": _array(_ref("Assignment"), minimum=1),
+            },
+        ),
+        "if": {"properties": {"target": {"required": ["event_id"]}}},
+        "then": {
+            "properties": {"assignments": {"items": {"oneOf": event_assignments}}}
+        },
+        "else": {"properties": {"assignments": {"items": {"oneOf": leg_assignments}}}},
+    }
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": definitions,
+        "oneOf": [
+            assign,
+            body(
+                "split",
+                {
+                    "parent": _ref("LegRef"),
+                    "children": _array(_ref("SplitChild"), minimum=2),
+                },
+            ),
+            body(
+                "identity",
+                {
+                    "mode": _enum("key_family/occurrence"),
+                    "canonical": _ref("Digest"),
+                    "members": _array(_ref("Digest"), minimum=1),
+                },
+            ),
+            body(
+                "statement_revision",
+                {
+                    "replaced": _array(_ref("Digest"), minimum=1),
+                    "replacement": _array(_ref("Digest"), minimum=1),
+                    **_fields(
+                        "account:ID fact_kind:movement/balance basis:ID start:D end:D"
+                    ),
+                },
+            ),
+            {
+                **body(
+                    "transfer",
+                    {
+                        "outgoing": {**_array(_ref("Digest")), "uniqueItems": True},
+                        "incoming": {**_array(_ref("Digest")), "uniqueItems": True},
+                        "commodity": _ref("ID"),
+                    },
+                ),
+                "anyOf": [
+                    {"properties": {"outgoing": {"minItems": 1}}},
+                    {"properties": {"incoming": {"minItems": 1}}},
+                ],
+            },
+            body(
+                "link",
+                {
+                    "link_kind": {"const": "document"},
+                    "target": _ref("TargetRef"),
+                    "documents": {
+                        **_array(_ref("Digest"), minimum=1),
+                        "uniqueItems": True,
+                    },
+                },
+            ),
+            body(
+                "link",
+                {
+                    "link_kind": {"const": "lifecycle"},
+                    "attempt": _ref("EventRef"),
+                    "fee": _ref("EventRef"),
+                },
+            ),
+        ],
+    }
+
+
+@_isolated_schema
 def registry_schema() -> dict:
     """Return source registries without unchecked extension dictionaries."""
     defs = _common_definitions()
@@ -589,10 +871,11 @@ def registry_schema() -> dict:
     }
 
 
+@_isolated_schema
 def configuration_schema() -> dict:
     """Return explicit source precedence, rendering, and output requirements."""
     defs = _common_definitions()
-    return {
+    schema: dict = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": defs,
         **_object(
@@ -603,16 +886,12 @@ def configuration_schema() -> dict:
                     _object(
                         {
                             **_fields(
-                                "entity_id:ID scope:RecordRef "
+                                "account_id:ID source_scope_id:ID "
                                 "period_start:D period_end:D "
-                                "fact_kind:movement/balance/action "
-                                "coverage_basis_id:ID? "
+                                "fact_kind:movement/balance "
+                                "coverage_basis_id:ID "
                                 "mode:confirming/complete_replacement"
                             ),
-                            "authoritative_sources": _array(
-                                _ref("RecordRef"), minimum=1
-                            ),
-                            "evidence": _array(_ref("EvidenceRef"), minimum=1),
                         }
                     )
                 ),
@@ -630,11 +909,17 @@ def configuration_schema() -> dict:
                     )
                 ),
                 "declaration_source_order": _ref("L"),
+                "ignored_sections": _array(
+                    _shape("source_scope_id:ID source_section:ID reason:S")
+                ),
             }
         ),
     }
+    schema["required"].remove("ignored_sections")
+    return schema
 
 
+@_isolated_schema
 def broker_match_schema() -> dict:
     """Return the closed retained broker allocation observation."""
     return {
@@ -652,29 +937,37 @@ def broker_match_schema() -> dict:
     }
 
 
+@_isolated_schema
 def extraction_schema() -> dict:
     """Return source-scoped observations, never booked determinations."""
     defs = _common_definitions()
+    defs["SourceDate"] = {
+        "type": "string",
+        "format": "source-date",
+        "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+    }
     time = {
-        k: v for k, v in _table_fields("prices").items() if k.startswith("timestamp_")
+        **_fields(
+            "timestamp_date:SourceDate timestamp_local:S? timestamp_offset_seconds:I? "
+            "timestamp_zone:ID? "
+            "timestamp_precision:date/minute/second/fractional_second "
+            "timestamp_fraction_digits:I?"
+        ),
     }
-    dates = {
-        k: v for k, v in _table_fields("transactions").items() if k.startswith("date_")
-    }
+    roles = ("authorized", "traded", "posted", "settled", "value")
+    dates = {f"date_{role}": _nullable(_ref("SourceDate")) for role in roles}
     leg = _object(
         {
             **_fields(
-                "posting_key:ID source_account_identifier:S? source_position_key:S? "
+                "posting_key:ID source_account_identifier:S? source_position_key:ID? "
                 "commodity_token:S amount:N symbol_as_stated:S? broker_lot_id:S? "
                 "price_per_unit:N? price_commodity_token:S? original_amount:N? "
                 "original_commodity_token:S? fx_rate_as_stated:N? "
                 "fx_base_commodity_token:S? fx_quote_commodity_token:S?"
             ),
-            **{
-                k: v
-                for k, v in _table_fields("postings").items()
-                if k.startswith("date_") or k == "posting_role"
-            },
+            **dates,
+            **{f"date_{role}_mode": _enum("inherit/value/unknown") for role in roles},
+            "posting_role": _table_fields("postings")["posting_role"],
             "components": _array(
                 _shape(
                     "component_key:ID "
@@ -697,7 +990,8 @@ def extraction_schema() -> dict:
                     _object(
                         {
                             "date_role": _enum(
-                                "authorized/traded/posted/settled/value/occurred"
+                                "authorized/traded/posted/settled/value/occurred/"
+                                "initiated/expires"
                             ),
                             **time,
                         }
@@ -709,13 +1003,13 @@ def extraction_schema() -> dict:
             {
                 **time,
                 **_fields(
-                    "date:D assertion_kind:opening/closing/point "
+                    "date:SourceDate assertion_kind:opening/closing/point "
                     "measurement:units/value is_complete:B coverage_basis:ID "
                     "scope_kind:positions/account_net quote_commodity_token:S?"
                 ),
                 "observations": _array(
                     _shape(
-                        "observation_key:ID source_position_key:S? "
+                        "observation_key:ID source_position_key:ID? "
                         "commodity_token:S amount:N"
                     )
                 ),
@@ -725,7 +1019,7 @@ def extraction_schema() -> dict:
             {
                 **time,
                 **_fields(
-                    "commodity_token:S quote_commodity_token:S date:D rate:N "
+                    "commodity_token:S quote_commodity_token:S date:SourceDate rate:N "
                     "basis_as_stated:S? market:S?"
                 ),
             }
@@ -734,8 +1028,9 @@ def extraction_schema() -> dict:
             {
                 **time,
                 **_fields(
-                    "commodity_token:S effective_date:D announcement_date:D? "
-                    "record_date:D? payment_date:D? status_token:S?"
+                    "commodity_token:S effective_date:SourceDate "
+                    "announcement_date:SourceDate? "
+                    "record_date:SourceDate? payment_date:SourceDate? status_token:S?"
                 ),
                 "action_kind": _table_fields("corporate_actions")["action_kind"],
                 "effects": _array(
@@ -749,10 +1044,11 @@ def extraction_schema() -> dict:
             }
         ),
         "observation": _shape(
-            "field_name:ID observation_kind:description/source_status/broker_lot/"
+            "subject_source_record_id:ID? field_name:ID "
+            "observation_kind:description/source_status/broker_lot/"
             "broker_match/broker_basis/broker_gain/notional/source_field "
             "value_type:decimal/text/date decimal_value:N? text_value:S? "
-            "date_value:D? commodity_token:S?"
+            "date_value:SourceDate? commodity_token:S?"
         ),
     }
     records = []
@@ -762,14 +1058,71 @@ def extraction_schema() -> dict:
                 {
                     "kind": {"const": kind},
                     **_fields(
-                        "source_record_id:ID source_section:S record_locator:ID "
+                        "source_record_id:ID source_section:ID record_locator:ID "
                         "external_record_id:S? event_key:ID "
-                        "source_account_identifier:S?"
+                        "source_account_identifier:S? source_key_domain:ID? "
+                        "source_key:ID?"
+                    ),
+                    "source_correction": _nullable(
+                        _shape(
+                            "source_key_domain:ID target_source_key:ID "
+                            "action:replace/delete"
+                        )
                     ),
                     "payload": payload,
                 }
             )
         )
+    defs["ExtractionTime"] = _object({"raw_value": _ref("S"), **time})
+    defs["ExtractionEvidencePart"] = {
+        "oneOf": [
+            _object(
+                {
+                    **_fields(
+                        "part_key:ID date_role:posted/traded/settled/value/authorized "
+                        "completeness:complete/partial/unstated"
+                    ),
+                    "kind": {"const": "movement_interval"},
+                    "start": _ref("ExtractionTime"),
+                    "end": _ref("ExtractionTime"),
+                    "record_locators": _ref("L"),
+                }
+            ),
+            _object(
+                {
+                    **_fields(
+                        "part_key:ID kind:balance_point/available_balance/"
+                        "pending_snapshot "
+                        "meaning:settled_position/available_funds/"
+                        "available_credit/pending "
+                        "completeness:complete/partial/unstated"
+                    ),
+                    "point": _ref("ExtractionTime"),
+                    "record_locators": _ref("L"),
+                }
+            ),
+            _object(
+                {
+                    **_fields("part_key:ID"),
+                    "kind": {"const": "observation_set"},
+                    "record_locators": _ref("L"),
+                }
+            ),
+        ]
+    }
+    defs["ExtractionSection"] = _object(
+        {
+            **_fields(
+                "section_id:ID source_class:statement/rolling/document institution:S? "
+                "source_account_identifier:S? stated_currency:S?"
+            ),
+            "account_context": _array(_shape("field_name:ID text_value:S")),
+            "revisions": _array(
+                _shape("relationship:replaces/confirms source_blob_digest:ID")
+            ),
+            "evidence_parts": _array(_ref("ExtractionEvidencePart")),
+        }
+    )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": defs,
@@ -777,25 +1130,19 @@ def extraction_schema() -> dict:
             {
                 "schema_version": {"const": 1},
                 **_fields("source_scope_id:ID source_blob_digest:ID importer_id:ID"),
+                "status_mappings": _array(
+                    _shape(
+                        "source_field:ID source_token:S event_key:ID "
+                        "candidate_state:pending/recognized/cancelled/retracted"
+                    )
+                ),
                 "source_scope": _object(
-                    {
-                        **_fields(
-                            "source_class:statement/rolling/document institution:S? "
-                            "period_start:D? period_end:D? "
-                            "completeness:complete/partial/unstated"
-                        ),
-                        "source_accounts": _ref("L"),
-                        "revisions": _array(
-                            _shape(
-                                "relationship:replaces/confirms source_blob_digest:ID"
-                            )
-                        ),
-                    }
+                    {"sections": _array(_ref("ExtractionSection"))}
                 ),
                 "records": _array({"oneOf": records}),
                 "unsupported_content": _array(
                     _shape(
-                        "source_section:S record_locator:ID event_family:ID reason:ID"
+                        "source_section:ID record_locator:ID event_family:ID reason:ID"
                     )
                 ),
             }
@@ -803,6 +1150,7 @@ def extraction_schema() -> dict:
     }
 
 
+@_isolated_schema
 def _publication_definitions() -> dict:
     defs = _common_definitions()
     defs.update(
@@ -862,9 +1210,9 @@ def _publication_definitions() -> dict:
                     **_fields("entity_id:ID source_scope_id:ID importer_id:ID"),
                     "account_mappings": _array(
                         _shape(
-                            "source_section:S source_account_identifier:S "
+                            "source_section:ID source_account_identifier:S "
                             "account_id:ID "
-                            "source_position_key:S? position_id:ID?"
+                            "source_position_key:ID? position_id:ID?"
                         )
                     ),
                 }
@@ -920,6 +1268,7 @@ def _publication_definitions() -> dict:
     return defs
 
 
+@_isolated_schema
 def manifest_schema() -> dict:
     """Return the complete logical manifest shape before canonical encoding."""
     return {
@@ -945,7 +1294,7 @@ def manifest_schema() -> dict:
                 "artifacts": _array(
                     {
                         **_shape(
-                            "kind:extract/model/checks/ledger/summary/evidence/"
+                            "kind:extract/source_checks/model/model_checks/checks/ledger/summary/evidence/"
                             "inputs/envelope/project/execution "
                             "path:Path byte_digest:Digest "
                             "logical_digest:Digest schema_id:ID?"
@@ -994,6 +1343,7 @@ def manifest_schema() -> dict:
     }
 
 
+@_isolated_schema
 def derivation_definitions_schema() -> dict:
     """Describe retained semantic rules independently of the runtime."""
     return {
@@ -1022,6 +1372,7 @@ def _artifact_array(item: dict) -> dict:
     return {"type": "array", "items": item}
 
 
+@_isolated_schema
 def checks_artifact_schema() -> dict:
     """Describe the published execution-check document."""
     return {
@@ -1038,8 +1389,20 @@ def checks_artifact_schema() -> dict:
 
 def _artifact_column_schema(column: dict) -> dict:
     kind = column["kind"]
-    if kind == "list":
-        definition = _artifact_array({"type": "string"})
+    if kind in {"string", "list"}:
+        meaning = column["text_semantics"]
+        text = {
+            "type": "string",
+            "text_semantics": meaning,
+            **(
+                {"format": "identifier", "minLength": 1}
+                if meaning == "identifier"
+                else {}
+            ),
+        }
+        definition = (
+            {**_artifact_array(text), "uniqueItems": True} if kind == "list" else text
+        )
     elif kind == "date":
         definition = {"type": "string", "format": "date"}
     else:
@@ -1049,6 +1412,7 @@ def _artifact_column_schema(column: dict) -> dict:
     return _nullable(definition) if column["nullable"] else definition
 
 
+@_isolated_schema
 def model_artifact_schema() -> dict:
     """Describe the complete shared-table execution model wrapper."""
     tables = {
@@ -1070,19 +1434,234 @@ def model_artifact_schema() -> dict:
             {
                 "schema_version": {"const": 1},
                 "tables": _object(tables),
-                "checks": _artifact_array(_ref("Check")),
+                "findings": _artifact_array(
+                    _shape("code:ID scope:ID blocking:B severity:info/warning/error")
+                ),
+                "determinations": _artifact_array(
+                    _shape("record_id:ID status:resolved/blocked")
+                ),
                 "derivations": {
                     **_artifact_array(_ref("ID")),
                     "uniqueItems": True,
                 },
+                "review": review_evidence_schema(),
             }
         ),
     }
 
 
+@_isolated_schema
+def review_evidence_schema() -> dict:
+    """Describe native boundaries, applicability and rule observations."""
+    match_value = _nullable(
+        {
+            "anyOf": [
+                {"type": "string"},
+                {"type": "integer"},
+                {"type": "boolean"},
+                _object(
+                    {
+                        "coefficient": {"type": "string"},
+                        "scale": {"type": "integer"},
+                        "source_scale": _nullable({"type": "integer"}),
+                    }
+                ),
+                _array({"type": "string"}),
+            ]
+        }
+    )
+    target = _object(
+        {
+            "entity_id": _ref("ID"),
+            "table": _enum(
+                "review_events/review_legs/review_sources/review_statements/"
+                "review_merge/review_documents"
+            ),
+            "key": {"type": "array", "items": _ref("ID"), "minItems": 1, "maxItems": 1},
+            "active": {"type": "boolean"},
+            "fields": _array(
+                _object(
+                    {
+                        "name": _ref("ID"),
+                        "kind": _enum("string/integer/boolean/date/list"),
+                        "nullable": {"type": "boolean"},
+                        "value": {
+                            "type": ["string", "integer", "boolean", "array", "null"],
+                            "items": {"type": "string"},
+                        },
+                    }
+                )
+            ),
+        }
+    )
+    return _object(
+        {
+            "tail": _array(target),
+            "counts": _shape("pending_events:I blocked_records:I"),
+            "proposals": _array(
+                {
+                    "oneOf": [
+                        _object(
+                            {
+                                **_fields(
+                                    "proposal_id:Digest mode:key_family/occurrence "
+                                    "canonical:Digest members:L reason:S"
+                                ),
+                                "kind": {"const": "identity"},
+                            }
+                        ),
+                        _object(
+                            {
+                                **_fields("proposal_id:Digest commodity:ID reason:S"),
+                                "kind": {"const": "transfer"},
+                                "outgoing": {
+                                    **_array(_ref("Digest"), minimum=1),
+                                    "uniqueItems": True,
+                                },
+                                "incoming": {
+                                    **_array(_ref("Digest"), minimum=1),
+                                    "uniqueItems": True,
+                                },
+                            }
+                        ),
+                    ]
+                }
+            ),
+            "receipts": _array(
+                _object(
+                    {
+                        "decision_key": _ref("ID"),
+                        "entry_digest": _ref("Digest"),
+                        "expected": target,
+                        "candidates": _array(target),
+                        "restore": _array(
+                            _object(
+                                {
+                                    "entity_id": _ref("ID"),
+                                    "table": _enum(
+                                        "review_events/review_legs/review_sources/"
+                                        "review_statements/review_merge/review_documents"
+                                    ),
+                                    "key": {
+                                        "type": "array",
+                                        "items": _ref("ID"),
+                                        "minItems": 1,
+                                        "maxItems": 1,
+                                    },
+                                    "candidates": _array(target),
+                                }
+                            )
+                        ),
+                        "outcome": _enum("applied/missing/ambiguous/inactive/changed"),
+                        "expected_digest": _ref("Digest"),
+                        "observed_digest": _nullable(_ref("Digest")),
+                    }
+                )
+            ),
+            "rules": _array(
+                _object(
+                    {
+                        "txn_id": _ref("ID"),
+                        "posting_id": _ref("ID"),
+                        "target_posting_ids": {
+                            **_array(_ref("ID")),
+                            "uniqueItems": True,
+                        },
+                        "rule_id": _ref("ID"),
+                        "rule_key": _ref("ID"),
+                        "eligible": {"type": "boolean"},
+                        "matched": {"type": "boolean"},
+                        "predicates": _array(
+                            _object(
+                                {
+                                    "field": _ref("ID"),
+                                    "operator": _enum("equals/in/contains"),
+                                    "value_type": _enum(
+                                        "string/identifier/date/decimal/integer/boolean/list"
+                                    ),
+                                    "expected": _array(match_value, minimum=1),
+                                    "observed": match_value,
+                                    "matches": {"type": "boolean"},
+                                }
+                            )
+                        ),
+                        "assignments": _array(
+                            _object(
+                                {
+                                    "field": _ref("ID"),
+                                    "mode": _enum("first/union"),
+                                    "value": match_value,
+                                    "outcome": _enum("applied/shadowed/redundant"),
+                                    "selected": {"type": "boolean"},
+                                }
+                            )
+                        ),
+                    }
+                )
+            ),
+        }
+    )
+
+
+@_isolated_schema
+def review_report_schema() -> dict:
+    """Seal attempt lineage independently of financial output publication."""
+    model = model_artifact_schema()
+    head = journal_head_schema()
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": model["$defs"],
+        **_object(
+            {
+                "schema_version": {"type": "integer", "const": 1},
+                "attempt_digest": _ref("Digest"),
+                "selection": _object(
+                    {
+                        "input_digest": _ref("Digest"),
+                        "journal_head": _nullable(
+                            {
+                                key: value
+                                for key, value in head.items()
+                                if key not in {"$defs", "$schema"}
+                            }
+                        ),
+                        "journal_headers": _array(_ref("Digest")),
+                        "journal_bases": _array(_ref("Digest")),
+                        "uncommitted_sequences": _array(
+                            {"type": "integer", "minimum": 1}
+                        ),
+                    }
+                ),
+                "model": _nullable(
+                    {
+                        key: value
+                        for key, value in model.items()
+                        if key not in {"$defs", "$schema"}
+                    }
+                ),
+                "checks": _array(_ref("Check")),
+                "failure": _nullable(_shape("code:ID location:S")),
+            }
+        ),
+    }
+
+
+@_isolated_schema
 def summary_artifact_schema() -> dict:
     """Describe the published summary sink document."""
     number = _ref("N")
+    monthly_quantity = _object(
+        {
+            "month": {"type": "string", "pattern": r"^\d{4}-\d{2}$"},
+            "account_id": _ref("ID"),
+            "position_id": _ref("ID"),
+            "commodity_id": _ref("ID"),
+            "opening": number,
+            "credits": number,
+            "debits": number,
+            "closing": number,
+        }
+    )
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": _publication_definitions(),
@@ -1092,23 +1671,36 @@ def summary_artifact_schema() -> dict:
                 "entity_id": _ref("ID"),
                 "as_of": _ref("D"),
                 "comparison_baseline": _nullable(_ref("Digest")),
-                "monthly_quantities": _artifact_array(
+                "journal": _nullable(
                     _object(
                         {
-                            "month": {
-                                "type": "string",
-                                "pattern": r"^\d{4}-\d{2}$",
-                            },
-                            "account_id": _ref("ID"),
-                            "position_id": _ref("ID"),
-                            "commodity_id": _ref("ID"),
-                            "opening": number,
-                            "credits": number,
-                            "debits": number,
-                            "closing": number,
+                            "sequence": _ref("I"),
+                            "entry_digest": _nullable(_ref("Digest")),
+                            "active": _array(
+                                _shape(
+                                    "decision_key:ID "
+                                    "kind:assign/split/identity/statement_revision/"
+                                    "transfer/link "
+                                    "logical_position:I"
+                                )
+                            ),
+                            "uncommitted_sequences": _array(_ref("I")),
                         }
                     )
                 ),
+                "uncategorized_work": _artifact_array(
+                    _object(
+                        {
+                            "commodity_id": _ref("ID"),
+                            "account_id": _nullable(_ref("ID")),
+                            "attribution": _enum("account/unattributed"),
+                            "leg_count": _ref("I"),
+                            "amount": number,
+                        }
+                    )
+                ),
+                "monthly_quantities": _artifact_array(monthly_quantity),
+                "transit_balances": _artifact_array(monthly_quantity),
                 "category_flows": _artifact_array(
                     _object(
                         {
@@ -1136,6 +1728,8 @@ def summary_artifact_schema() -> dict:
                     {
                         "unreviewed_events": _ref("I"),
                         "uncategorized_events": _ref("I"),
+                        "pending_events": _ref("I"),
+                        "blocked_records": _ref("I"),
                     }
                 ),
                 "checks": _artifact_array(_ref("Check")),
@@ -1144,6 +1738,7 @@ def summary_artifact_schema() -> dict:
     }
 
 
+@_isolated_schema
 def descriptor_schema() -> dict:
     """Return the terminal checksum inventory with no self-checksum edge."""
     return {
@@ -1160,9 +1755,10 @@ def descriptor_schema() -> dict:
     }
 
 
+@_isolated_schema
 def execution_record_schema() -> dict:
     """Describe observed execution facts, not a restorable environment."""
-    string = {"type": "string"}
+    string = _common_definitions()["ID"]
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         **_object(
@@ -1183,11 +1779,26 @@ def execution_record_schema() -> dict:
                     )
                 ),
                 "distributions": _array(_object({"name": string, "version": string})),
+                "importers": _array(
+                    _object(
+                        {
+                            "importer_id": string,
+                            "distribution": string,
+                            "version": string,
+                            "kind": _enum("release/development"),
+                            "profile": string,
+                            "profile_version": {"type": "integer", "minimum": 1},
+                            "contract_version": {"type": "integer", "const": 1},
+                            "maximum_bytes": {"type": "integer", "minimum": 1},
+                        }
+                    )
+                ),
             }
         ),
     }
 
 
+@_isolated_schema
 def envelope_schema() -> dict:
     """Return named, ordered input edges and explicitly typed artifact payloads."""
     defs = _publication_definitions()
@@ -1197,7 +1808,9 @@ def envelope_schema() -> dict:
         **_object(
             {
                 "schema_version": {"const": 1},
-                "kind": _enum("extract/model/checks/ledger/summary/tabular"),
+                "kind": _enum(
+                    "extract/source_checks/model/model_checks/checks/ledger/summary/tabular"
+                ),
                 "producer": _shape("name:ID version:ID content_digest:Digest"),
                 "execution_digest": _ref("Digest"),
                 "configuration_digest": _ref("Digest"),
@@ -1224,14 +1837,20 @@ def validate_document(
     validate_json_values(document, "document")
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=128)
 def _validator(encoded_schema: str) -> Validator:
     return Draft202012Validator(
-        _checked_schema(encoded_schema), format_checker=FormatChecker()
+        _checked_schema(encoded_schema), format_checker=_FORMATS
     )
 
 
 def _checked_schema(encoded_schema: str) -> dict:
+    _check_schema(encoded_schema)
+    return json.loads(encoded_schema)
+
+
+@lru_cache(maxsize=128)
+def _check_schema(encoded_schema: str) -> None:
     schema = json.loads(encoded_schema)
 
     def local_references(value: object) -> None:
@@ -1251,4 +1870,3 @@ def _checked_schema(encoded_schema: str) -> dict:
 
     local_references(schema)
     Draft202012Validator.check_schema(schema)
-    return schema

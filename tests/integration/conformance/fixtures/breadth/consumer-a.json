@@ -46,8 +46,8 @@
         {"id": "transfer-in", "position": "cash-A", "commodity": "USD", "amount": "20", "role": "cash", "weights": [{"kind": "consideration", "amount": "20", "commodity": "USD"}]}
       ],
       "rows": {"links": [
-        {"link_id": "@internal", "member_role": "outgoing", "member_kind": "posting", "member_id": "@transfer-out", "link_kind": "transfer", "origin": "declaration"},
-        {"link_id": "@internal", "member_role": "incoming", "member_kind": "posting", "member_id": "@transfer-in", "link_kind": "transfer", "origin": "declaration"}
+        {"link_id": "@internal", "member_role": "outgoing", "member_kind": "posting", "member_id": "@transfer-out", "link_kind": "transfer", "origin": "correction"},
+        {"link_id": "@internal", "member_role": "incoming", "member_kind": "posting", "member_id": "@transfer-in", "link_kind": "transfer", "origin": "correction"}
       ]}
     },
     {

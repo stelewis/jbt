@@ -4,6 +4,7 @@ from jbt.contracts.primitives import (
     ContractError,
     number,
     require,
+    validate_identifier,
     validate_json_values,
     validate_number,
 )
@@ -74,7 +75,8 @@ def test_failure_has_safe_structured_location() -> None:
     [
         (1.0, "json_float"),
         (2**63, "json_integer_range"),
-        ({"name": "e\u0301"}, "text_nfc"),
+        ({"e\u0301": "name"}, "canonical_key_required"),
+        ({"name": "\ud800"}, "text_utf8"),
         ({1: "value"}, "json_object_key"),
         (
             {"amount": {"coefficient": "10", "scale": 1, "source_scale": None}},
@@ -85,3 +87,16 @@ def test_failure_has_safe_structured_location() -> None:
 def test_json_values_are_strictly_typed(value: object, code: str) -> None:
     with pytest.raises(ContractError, match=code):
         validate_json_values(value, "test")
+
+
+@pytest.mark.parametrize("text", ["e\u0301", " e\u0301\n\x00 ", ""])
+def test_generic_json_text_is_exact(text: str) -> None:
+    value = {"name": text}
+    validate_json_values(value, "test")
+    assert value == {"name": text}
+
+
+@pytest.mark.parametrize("text", ["", "e\u0301", "\n", "\x00", "\ud800"])
+def test_identifier_contract_is_strict(text: str) -> None:
+    with pytest.raises(ContractError):
+        validate_identifier(text, "test.identifier")

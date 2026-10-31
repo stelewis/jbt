@@ -214,7 +214,7 @@
             "member_kind": "posting",
             "member_id": "@selected-out",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           },
           {
             "link_id": "@selected-link",
@@ -222,7 +222,7 @@
             "member_kind": "posting",
             "member_id": "@selected-in",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           }
         ]
       }

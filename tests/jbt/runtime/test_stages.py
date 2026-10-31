@@ -251,10 +251,11 @@ def test_bypass_avoids_all_cache_io(
     monkeypatch.setattr(stages, "_read_envelope", unexpected)
     monkeypatch.setattr(stages, "_write_cache", unexpected)
     runner = StageRunner(None, facts)
-    result = runner.run(stage, lambda: b"fresh")
-    assert result.payload == b"fresh"
-    assert result.fingerprint
-    assert byte_digest(result.envelope)
-    assert runner.executed == ["extract"]
+    for payload in (b"fresh", b"recomputed"):
+        result = runner.run(stage, lambda payload=payload: payload)
+        assert result.payload == payload
+        assert result.fingerprint
+        assert byte_digest(result.envelope)
+    assert runner.executed == ["extract", "extract"]
     assert runner.reused == []
     assert list(tmp_path.iterdir()) == []

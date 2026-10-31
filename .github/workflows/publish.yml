@@ -60,7 +60,7 @@ jobs:
         run: uv build --no-sources
       - name: Check the final distribution archives
         run: uv run --no-sync python .github/scripts/check_release.py --distributions dist
-      - name: Exercise financial replay with the final wheel
+      - name: Exercise installed release CLI and checked replay
         run: |
           wheels=(dist/*.whl)
           test "${#wheels[@]}" -eq 1

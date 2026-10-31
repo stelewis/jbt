@@ -21,10 +21,14 @@ dependencies = [
     "beancount>=3.2.3",
     "jsonschema>=4.26.0",
     "pyarrow>=25.0.1",
+    "tzdata>=2026.5",
 ]
 
 [project.scripts]
 jbt = "jbt.cli:main"
+
+[project.entry-points."jbt.importers"]
+ofx = "jbt.importers.ofx:importer"
 
 [project.urls]
 Repository = "https://github.com/stelewis/jbt"
@@ -54,7 +58,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-mock>=3.15.1",
     "ruff>=0.16.9",
-    "tqlint>=0.12.0",
+    "tqlint>=0.13.0",
     "ty>=0.0.84",
 ]
 
@@ -155,8 +159,9 @@ exclude = [
 ]
 
 [tool.tq]
-ignore = ["test-file-too-large"]
 init_modules = "ignore"
+fail_on = "error"
+max_test_file_non_blank_lines = 1000
 qualifier_strategy = "allowlist"
 allowed_qualifiers = [
     "fixtures_golden",
@@ -165,8 +170,42 @@ allowed_qualifiers = [
     "config",
 ]
 
+[tool.tq.severity_overrides]
+mapping-missing-test = "info"
+structure-mismatch = "error"
+orphaned-test = "error"
+
 [[tool.tq.targets]]
 name = "jbt"
 package = "jbt"
 source_root = "src"
 test_root = "tests"
+
+[[tool.tq.targets.accepted_findings]]
+rule = "mapping-missing-test"
+path = "domain/quantity.py"
+rationale = "Arithmetic is proved through bank/card reconciliation in tests/jbt/model/test_quantity.py and transfer conservation in tests/jbt/model/test_links.py; bounded numeric semantics belong to tests/jbt/domain/test_numbers.py."
+
+[[tool.tq.targets.accepted_findings]]
+rule = "test-file-too-large"
+path = "integration/conformance/test_ledger_boundary.py"
+max_non_blank_lines = 1252
+rationale = "Real Beancount handoff, exact lot lineage and explicit projection limits."
+
+[[tool.tq.targets.accepted_findings]]
+rule = "test-file-too-large"
+path = "integration/conformance/test_reader.py"
+max_non_blank_lines = 2436
+rationale = "Independent snapshot verification and financial replay of the shared corpus."
+
+[[tool.tq.targets.accepted_findings]]
+rule = "test-file-too-large"
+path = "jbt/runtime/test_decisions.py"
+max_non_blank_lines = 1037
+rationale = "Retained decision commands, authenticated operands and original-position supersession."
+
+[[tool.tq.targets.accepted_findings]]
+rule = "test-file-too-large"
+path = "jbt/runtime/test_resolution.py"
+max_non_blank_lines = 1017
+rationale = "Source and authored evidence adaptation, dated bindings and explicit temporal roles share one resolver contract."

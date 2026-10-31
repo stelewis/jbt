@@ -140,7 +140,7 @@
         "period_start": "2026-01-01",
         "period_end": "2026-01-31",
         "stated_currency": "USD",
-        "source_format": "json",
+        "importer_id": "synthetic-json",
         "is_eclipsed": false,
         "coverage_basis": "settled-units"
       }

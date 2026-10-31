@@ -7,7 +7,6 @@ from fractions import Fraction
 import pytest
 from tests.integration.conformance.corpus import FixtureCase, load_case
 
-from jbt.contracts.catalog import catalog
 from jbt.contracts.declarations import validate_declaration
 from jbt.contracts.validation import ContractError, validate_tables
 from jbt.domain.errors import TemporalError
@@ -80,23 +79,6 @@ def _utc_text(case: FixtureCase, alias: str) -> str:
     return datetime.fromtimestamp(instant.unix_seconds, tz=UTC).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
-
-
-def test_time_and_loan_is_complete_valid_retained_corpus() -> None:
-    case = load_case("time-and-loan")
-    validate_tables(case.tables)
-    for declaration in case.tables["declarations"]:
-        payload_json = declaration["payload_json"]
-        assert isinstance(payload_json, str)
-        validate_declaration(json.loads(payload_json))
-    assert set(case.tables) == {table.name for table in catalog()}
-    assert len(case.domain_records) == 7
-    assert {mutation["id"] for mutation in case.negative_cases} >= {
-        "unresolved-fold",
-        "conflicting-fold",
-        "utc-period-substitution",
-        "invent-loan-allocation",
-    }
 
 
 def test_ambiguous_fold_preserves_civil_observation_and_pinned_later_choice() -> None:

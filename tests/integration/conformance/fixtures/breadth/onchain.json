@@ -172,7 +172,7 @@
   ],
   "oracle_notes": [
     "Quantity-only mechanical events deliberately make no tax or valuation determination. Starting NATIVE 10, wrap -2, unwrap +1, LP -2+1.5, canonical receipt +1 and subsequent reversal -0.5 leaves 9.",
-    "Bridge sends chain-A USDCA 3 and receives chain-B USDCB 3: same displayed USDC never merges identities. LP deposit uses USDCA 4 and withdrawal returns 5, leaving USDCA 8. Spending one USDCB leaves 2, not USD cash.",
+    "Bridge sends chain-A USDCA 3 and receives chain-B USDCB 3: same displayed USDC never merges identities. Their lifecycle predecessor/successor link records the stated bridge-message correspondence, not a same-commodity transfer or a valuation determination. LP deposit uses USDCA 4 and withdrawal returns 5, leaving USDCA 8. Spending one USDCB leaves 2, not USD cash.",
     "LP units go +1 then -1; returned asset ratio changes from 2:4 to 1.5:5. REBASE 10 increases by stated 1 to 11. Failed transfer consumes only GAS 0.1, leaving 1.9.",
     "NFT token 1 moves A to B while token 2 remains in A. Fork 1 and airdrop 2 have unknown principal and fees, not zero cost.",
     "Retracted orphan-block receipt 4 has no recognized effect. A replacement canonical receipt 1 is distinct from the later recognized reversal 0.5."
@@ -905,18 +905,18 @@
     "links": [
       {
         "link_id": "@bridge-correspondence",
-        "member_role": "outgoing",
-        "member_kind": "posting",
-        "member_id": "@bridge-send",
-        "link_kind": "transfer",
+        "member_role": "predecessor",
+        "member_kind": "transaction",
+        "member_id": "@bridge-out",
+        "link_kind": "lifecycle",
         "origin": "derived"
       },
       {
         "link_id": "@bridge-correspondence",
-        "member_role": "incoming",
-        "member_kind": "posting",
-        "member_id": "@bridge-receive",
-        "link_kind": "transfer",
+        "member_role": "successor",
+        "member_kind": "transaction",
+        "member_id": "@bridge-in",
+        "link_kind": "lifecycle",
         "origin": "derived"
       },
       {
@@ -925,7 +925,7 @@
         "member_kind": "posting",
         "member_id": "@nft-out",
         "link_kind": "transfer",
-        "origin": "derived"
+        "origin": "correction"
       },
       {
         "link_id": "@nft-correspondence",
@@ -933,7 +933,7 @@
         "member_kind": "posting",
         "member_id": "@nft-in",
         "link_kind": "transfer",
-        "origin": "derived"
+        "origin": "correction"
       },
       {
         "link_id": "@failed-fee",

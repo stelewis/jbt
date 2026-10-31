@@ -1,0 +1,37 @@
+{
+  "extends": "keyed-overlap.json",
+  "case_id": "exact-text",
+  "replacements": [
+    {
+      "path": ["oracle_notes"],
+      "value": [
+        "Descriptive spelling does not change the keyed-overlap financial determinations: 100 + 20 - 5 - 5 = 110.",
+        "Padded decomposed accents, newlines and Unicode controls are retained exactly, not extracted or interpreted."
+      ]
+    },
+    {
+      "path": ["accounts", 0, "fields"],
+      "value": {"institution": "  Cafe\u0301\nInstitution\u0000  "}
+    },
+    {
+      "path": ["commodities", 0, "name"],
+      "value": "  Dollar e\u0301\n  "
+    },
+    {
+      "path": ["events", 2, "description_as_stated"],
+      "value": "  Cafe\u0301\nTwo notebooks\u0000  "
+    },
+    {
+      "path": ["events", 2, "payee"],
+      "value": "  Cafe\u0301\nShop  "
+    },
+    {
+      "path": ["events", 2, "narration"],
+      "value": "\tAme\u0301lie\npaid\u0085  "
+    },
+    {
+      "path": ["events", 2, "tags"],
+      "value": ["", "  e\u0301\n", "\u00e9", "\u200d"]
+    }
+  ]
+}

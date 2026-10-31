@@ -6,17 +6,14 @@
       "id": "merge-reviewed",
       "kind": "identity",
       "payload": {
-        "record_kind": "transaction",
-        "event_key": "canonical",
-        "anchor": {"kind": "source_record", "id": "@source:canonical"},
-        "members": [
-          {"source_record_id": "@source:canonical", "event_key": "canonical"},
-          {"source_record_id": "@source:old-m", "event_key": "old-m"}
-        ],
-        "authored_keys": [],
-        "retired_ids": ["@old-m"],
-        "successor_ids": ["@canonical"],
-        "guards": [],
+        "sequence": 1,
+        "previous_entry_digest": null,
+        "entity_id": "synthetic-owner",
+        "declaration_key": "merge-reviewed",
+        "operation": "record",
+        "prior_entry_digest": null,
+        "reviewed_attempt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "reason": "Reviewed merger retires independent old-m into canonical; history remains addressable."
       }
     },
@@ -24,17 +21,14 @@
       "id": "split-reviewed",
       "kind": "identity",
       "payload": {
-        "record_kind": "transaction",
-        "event_key": "split-new",
-        "anchor": {"kind": "source_record", "id": "@source:split-new"},
-        "members": [
-          {"source_record_id": "@source:old-m", "event_key": "old-m"},
-          {"source_record_id": "@source:split-new", "event_key": "split-new"}
-        ],
-        "authored_keys": [],
-        "retired_ids": [],
-        "successor_ids": ["@split-new"],
-        "guards": [],
+        "sequence": 2,
+        "previous_entry_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "entity_id": "synthetic-owner",
+        "declaration_key": "split-reviewed",
+        "operation": "record",
+        "prior_entry_digest": null,
+        "reviewed_attempt_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "payload_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "reason": "Reviewed split moves old-m membership to new surviving canonical source, never resurrecting its retired ID."
       }
     }

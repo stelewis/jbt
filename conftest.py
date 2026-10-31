@@ -11,5 +11,5 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--release-wheel",
         type=Path,
         default=None,
-        help="Use this final release wheel in the installed financial acceptance test.",
+        help="Use this final release wheel in the installed release acceptance test.",
     )

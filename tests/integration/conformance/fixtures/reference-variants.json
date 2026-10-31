@@ -228,8 +228,8 @@
           {"reference_change_id": "@variant-transfer-in", "step_id": "@step:variant-transfer", "position_id": "@future-B", "lot_id": "@variant-three", "change_kind": "entry", "units": {"n": "2"}, "reference_after": {"n": "100"}, "reference_commodity_id": "@USD", "terms_declaration_id": "@declaration:linear"}
         ],
         "links": [
-          {"link_id": "@variant-transfer-link", "member_role": "outgoing", "member_kind": "posting", "member_id": "@variant-out", "link_kind": "transfer", "origin": "derived"},
-          {"link_id": "@variant-transfer-link", "member_role": "incoming", "member_kind": "posting", "member_id": "@variant-in", "link_kind": "transfer", "origin": "derived"}
+          {"link_id": "@variant-transfer-link", "member_role": "outgoing", "member_kind": "posting", "member_id": "@variant-out", "link_kind": "transfer", "origin": "correction"},
+          {"link_id": "@variant-transfer-link", "member_role": "incoming", "member_kind": "posting", "member_id": "@variant-in", "link_kind": "transfer", "origin": "correction"}
         ]
       }
     },

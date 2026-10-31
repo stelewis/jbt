@@ -63,6 +63,25 @@ def test_build_dates_are_physical_dates(
     assert actual.to_pylist()[0]["schema_version"] == 1
 
 
+def test_descriptive_unicode_is_preserved_in_physical_strings(
+    tmp_path: Path,
+    settings: WriterSettings,
+) -> None:
+    table = next(table for table in catalog() if table.name == "counterparties")
+    rows = [
+        {
+            "entity_id": "E",
+            "counterparty_id": key,
+            "name": name,
+            "declaration_id": key,
+        }
+        for key, name in (("composed", " é\n\x00 "), ("decomposed", " e\u0301\n\x00 "))
+    ]
+    path = tmp_path / "counterparties.parquet"
+    write_table(path, table, rows, settings)
+    assert pq.read_table(path).to_pylist() == rows
+
+
 @pytest.mark.parametrize("size", [0, -1, 1_000_001])
 def test_invalid_row_group_size(size: int) -> None:
     with pytest.raises(ValueError, match="row_group_size"):

@@ -176,7 +176,7 @@
             "member_kind": "posting",
             "member_id": "@transit-out",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           },
           {
             "link_id": "@arrival-link",
@@ -184,7 +184,7 @@
             "member_kind": "posting",
             "member_id": "@arrival-in",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           }
         ],
         "book_step_dependencies": [

@@ -455,6 +455,8 @@ def _output_entries(
             "extract",
             "model",
             "checks",
+            "source_checks",
+            "model_checks",
             "ledger",
             "summary",
             "evidence",

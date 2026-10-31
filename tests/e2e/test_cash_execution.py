@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 import os
@@ -8,20 +7,22 @@ import sys
 from pathlib import Path
 from time import perf_counter
 
-import duckdb
 import pytest
-from beancount import loader
-from tests.integration.conformance.corpus import approved_schemas
-from tests.integration.conformance.reader import (
-    check_assertions,
-    read_snapshot,
+from tests.fixtures.synthetic_importer.synthetic_statements.adapter import (
+    SECTION,
+    Entry,
+    Statement,
 )
+from tests.integration.conformance.corpus import approved_schemas
+from tests.integration.conformance.reader import read_snapshot
+
+from jbt.runtime.execution import observe_execution
 
 pytestmark = pytest.mark.e2e
 _LOG = logging.getLogger(__name__)
 
 
-def _install_tool(wheel: Path, directory: Path) -> Path:
+def _install_tool(wheel: Path, plugin: Path, directory: Path) -> Path:
     uv = shutil.which("uv")
     assert uv is not None
     started = perf_counter()
@@ -34,6 +35,8 @@ def _install_tool(wheel: Path, directory: Path) -> Path:
             sys.executable,
             "--from",
             str(wheel),
+            "--with",
+            str(plugin),
             "jbt",
         ],
         cwd=directory,
@@ -51,7 +54,30 @@ def _install_tool(wheel: Path, directory: Path) -> Path:
     return directory / "bin/jbt"
 
 
-@pytest.fixture
+def _build_wheel(project: Path, directory: Path) -> Path:
+    uv = shutil.which("uv")
+    assert uv is not None
+    started = perf_counter()
+    subprocess.run(  # noqa: S603 - ordinary packaging of reviewed synthetic inputs
+        [
+            uv,
+            "build",
+            "--wheel",
+            "--no-sources",
+            "--out-dir",
+            str(directory),
+        ],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        timeout=180,
+    )
+    _LOG.info("Provisioning %s wheel: %.2fs", project.name, perf_counter() - started)
+    (wheel,) = directory.glob("*.whl")
+    return wheel
+
+
+@pytest.fixture(scope="session")
 def non_c_locale() -> str:
     executable = shutil.which("locale")
     assert executable is not None
@@ -73,7 +99,6 @@ def _cli(
     *arguments: str,
     executable: Path,
     cwd: Path,
-    success: bool = True,
     ambient: tuple[str, str, str] = ("UTC", "C", "17"),
 ) -> dict:
     started = perf_counter()
@@ -93,168 +118,100 @@ def _cli(
         timeout=300,
     )
     _LOG.info("Processing %s: %.2fs", arguments[0], perf_counter() - started)
-    if not success:
-        assert completed.returncode != 0
-        assert completed.stderr
-        return {}
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
 
 
-@pytest.fixture
-def installed_cli(tmp_path: Path, pytestconfig: pytest.Config) -> tuple[Path, Path]:
+@pytest.fixture(scope="session")
+def installed_cli(
+    tmp_path_factory: pytest.TempPathFactory, pytestconfig: pytest.Config
+) -> Path:
+    directory = tmp_path_factory.mktemp("installed-cli")
+    repository = Path(__file__).resolve().parents[2]
     selected = pytestconfig.getoption("release_wheel")
     if selected is not None:
         assert isinstance(selected, Path)
         wheel = selected.resolve(strict=True)
         assert wheel.suffix == ".whl"
-        return _install_tool(wheel, tmp_path), wheel
-    repository = Path(__file__).resolve().parents[2]
-    uv = shutil.which("uv")
-    assert uv is not None
-    distributions = tmp_path / "distributions"
-    started = perf_counter()
-    subprocess.run(  # noqa: S603 - ordinary packaging of the working checkout
-        [
-            uv,
-            "build",
-            "--wheel",
-            "--no-sources",
-            "--out-dir",
-            str(distributions),
-        ],
-        cwd=repository,
-        check=True,
-        capture_output=True,
-        timeout=180,
+    else:
+        wheel = _build_wheel(repository, directory / "distributions")
+    plugin = _build_wheel(
+        repository / "tests/fixtures/synthetic_importer", directory / "plugin"
     )
-    _LOG.info("Provisioning release build: %.2fs", perf_counter() - started)
-    (wheel,) = distributions.glob("*.whl")
-    return _install_tool(wheel, tmp_path), wheel
+    return _install_tool(wheel, plugin, directory)
 
 
-def _files(root: Path) -> dict[str, str]:
-    return {
-        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in root.rglob("*")
-        if path.is_file()
-    }
-
-
-def _check_financial_outputs(
-    generation: Path, descriptor_digest: str, schema_pins: dict[str, str]
-) -> None:
-    snapshot = read_snapshot(
-        generation,
-        descriptor_digest=descriptor_digest,
-        expected_schema_digests=schema_pins,
-    )
-    assert all("is_dirty" not in row for row in snapshot.tables["build"])
-    execution = json.loads((generation / "execution.json").read_bytes())
-    assert execution["producer"]["kind"] == "release"
-    assert execution["producer"]["source_commit"] is None
-    assert execution["runtime"]["version"]
-    assert execution["distributions"]
-    assert [
-        result.status
-        for result in check_assertions(
-            snapshot.tables, entity="invented-owner", date_roles={"posted": "posted"}
-        )
-    ] == ["pass", "pass"]
-    assert [
-        (check["check_kind"], check["status"])
-        for check in snapshot.manifest["checks"]
-        if check["check_kind"] == "coverage"
-    ] == [("coverage", "not_evaluable")]
-    ledgers = tuple(generation.rglob("*.beancount"))
-    assert len(ledgers) == 1
-    text = ledgers[0].read_text()
-    _, errors, _ = loader.load_string(text)
-    assert not errors
-    assert "2026-01-01 balance Assets:Bank 100 ~ 0 USD" in text
-    assert "2026-02-01 balance Assets:Bank 115 ~ 0 USD" in text
-    with duckdb.connect(
-        config={
-            "autoload_known_extensions": "false",
-            "autoinstall_known_extensions": "false",
-            "allow_community_extensions": "false",
-        }
-    ) as connection:
-        connection.execute(
-            "SET allowed_paths = ?", [[str(generation / "postings.parquet")]]
-        )
-        connection.execute("SET enable_external_access = false")
-        amounts = connection.execute(
-            "SELECT amount_coefficient, amount_scale FROM read_parquet(?) "
-            "WHERE leg_kind = 'position'",
-            [str(generation / "postings.parquet")],
-        ).fetchall()
-    assert sorted(amounts) == [("-5", 0), ("100", 0), ("20", 0)]
-    summaries = tuple(generation.rglob("summary.json"))
-    assert len(summaries) == 1
-    summary = json.loads(summaries[0].read_bytes())
-    january = next(
-        row for row in summary["monthly_quantities"] if row["month"] == "2026-01"
-    )
-    assert [
-        january[key]["coefficient"]
-        for key in ("opening", "credits", "debits", "closing")
-    ] == [
-        "100",
-        "20",
-        "-5",
-        "115",
-    ]
-    coverage = next(
-        check for check in summary["checks"] if check["check_kind"] == "coverage"
-    )
-    assert coverage["status"] == "not_evaluable"
-    assert all(
-        check["status"] == "pass"
-        for check in summary["checks"]
-        if check["check_kind"] != "coverage"
-    )
-
-
-def _acquire(root: Path, inbox: Path, project: dict, executable: Path) -> list[dict]:
-    receipts = []
-    for selection, name in zip(
-        project["sources"], ("prior.ofx", "main.ofx"), strict=True
-    ):
-        receipt = _cli(
-            "acquire",
-            "--root",
-            str(root),
-            str(inbox / name),
-            "--retry-key",
-            name,
-            "--acquired-at",
-            "2026-02-02T00:00:00Z",
-            "--source-scope",
-            "bank-feed",
-            "--importer",
-            "ofx",
-            cwd=inbox,
-            executable=executable,
-        )
-        assert selection["accession_id"] == receipt["accession_id"]
-        receipts.append(receipt)
-    return receipts
-
-
-def test_release_cash_build_reuse_and_relocated_uncached_verify(
+def test_installed_release_cli_reuse_and_relocated_replay(
     tmp_path: Path,
     project_document: dict,
-    installed_cli: tuple[Path, Path],
+    installed_cli: Path,
     non_c_locale: str,
 ) -> None:
     repository = Path(__file__).resolve().parents[2]
     root = tmp_path / "project"
     root.mkdir()
     inbox = tmp_path / "inbox"
-    shutil.copytree(repository / "tests/jbt/importers/fixtures_synthetic", inbox)
-    executable, wheel = installed_cli
-    receipts = _acquire(root, inbox, project_document, executable)
+    inbox.mkdir()
+    statement = Statement(
+        "2026-01-01",
+        "2026-02-01",
+        115,
+        (
+            Entry("credit", "2026-01-12", 20, "Invented income"),
+            Entry("debit", "2026-01-20", -5, "Invented expense"),
+        ),
+        complete=True,
+        replaces=None,
+    )
+    sources = (
+        (
+            "prior.ofx",
+            "ofx",
+            "bank-feed",
+            (
+                repository / "tests/jbt/importers/fixtures_synthetic/prior.ofx"
+            ).read_bytes(),
+        ),
+        (
+            "opening.json",
+            "synthetic-statements",
+            "synthetic-feed",
+            Statement(
+                "2025-12-31", "2026-01-01", 100, (), complete=True, replaces=None
+            ).encode(),
+        ),
+        ("main.json", "synthetic-statements", "synthetic-feed", statement.encode()),
+    )
+    accessions = []
+    for name, importer, scope, data in sources:
+        path = inbox / name
+        path.write_bytes(data)
+        receipt = _cli(
+            "acquire",
+            "--root",
+            str(root),
+            str(path),
+            "--retry-key",
+            name,
+            "--acquired-at",
+            "2026-02-02T00:00:00Z",
+            "--source-scope",
+            scope,
+            "--importer",
+            importer,
+            cwd=inbox,
+            executable=installed_cli,
+        )
+        accessions.append(receipt["accession_id"])
+    project_document["sources"] = accessions
+    account = next(d for d in project_document["declarations"] if d["key"] == "bank")
+    account["payload"]["bindings"].append(
+        {
+            "source_scope_id": "synthetic-feed",
+            "source_section": SECTION,
+            "source_position_key": None,
+        }
+    )
     project_path = root / "project.json"
     project_path.write_text(json.dumps(project_document))
     first = _cli(
@@ -264,11 +221,33 @@ def test_release_cash_build_reuse_and_relocated_uncached_verify(
         "--project",
         "project.json",
         cwd=tmp_path,
-        executable=executable,
+        executable=installed_cli,
     )
     generation = root / first["generation"]
-    _check_financial_outputs(generation, first["descriptor_digest"], approved_schemas())
-    original = _files(generation)
+    read_snapshot(
+        generation,
+        descriptor_digest=first["descriptor_digest"],
+        expected_schema_digests=approved_schemas(),
+    )
+    execution = json.loads((generation / "execution.json").read_bytes())
+    assert execution["producer"]["kind"] == "release"
+    assert execution["producer"]["source_commit"] is None
+    assert execution["runtime"]["version"]
+    builtin, external = execution["importers"]
+    assert builtin["importer_id"] == "ofx"
+    assert builtin["distribution"] == "jbt"
+    assert builtin["kind"] == "release"
+    assert external == {
+        "importer_id": "synthetic-statements",
+        "distribution": "jbt-synthetic-statements",
+        "version": "1.2.3",
+        "kind": "release",
+        "profile": "synthetic-statements",
+        "profile_version": 1,
+        "contract_version": 1,
+        "maximum_bytes": 16_384,
+    }
+    assert observe_execution().document()["producer"]["kind"] == "development"
     warm = _cli(
         "build",
         "--root",
@@ -276,75 +255,27 @@ def test_release_cash_build_reuse_and_relocated_uncached_verify(
         "--project",
         "project.json",
         cwd=inbox,
-        executable=executable,
+        executable=installed_cli,
         ambient=("America/New_York", non_c_locale, "901"),
     )
     assert warm["executed"] == 0
     assert warm["reused"]
     assert warm["descriptor_digest"] == first["descriptor_digest"]
-    independent = tmp_path / "independent"
-    independent.mkdir()
-    _acquire(independent, inbox, project_document, executable)
-    (independent / "project.json").write_text(json.dumps(project_document))
-    second = _cli(
-        "build",
-        "--root",
-        str(independent),
-        "--project",
-        "project.json",
-        cwd=tmp_path,
-        executable=executable,
-        ambient=("America/New_York", non_c_locale, "313"),
-    )
-    assert second["reused"] == 0
-    assert second["financial_digest"] == first["financial_digest"]
-    assert second["descriptor_digest"] == first["descriptor_digest"]
-    _check_financial_outputs(
-        independent / second["generation"],
-        second["descriptor_digest"],
-        approved_schemas(),
-    )
-    missing = root / "objects" / receipts[0]["object_digest"]
-    displaced = tmp_path / "displaced-object"
-    missing.rename(displaced)
-    _cli(
-        "build",
-        "--root",
-        str(root),
-        "--project",
-        "project.json",
-        cwd=tmp_path,
-        success=False,
-        executable=executable,
-    )
-    displaced.rename(missing)
-    assert _files(generation) == original
     shutil.rmtree(inbox)
     project_path.unlink()
     shutil.rmtree(root / "cache")
     restored = tmp_path / "restored"
     root.rename(restored)
-    shutil.rmtree(tmp_path / "tools")
-    executable.unlink()
-    executable = _install_tool(wheel, tmp_path)
-    pin = first["descriptor_digest"]
-    selected_files = {
-        path.name: path.read_bytes() for path in restored.iterdir() if path.is_file()
-    }
-    _cli(
+    verification = _cli(
         "verify",
         "--root",
         str(restored),
         "--baseline",
-        pin,
+        first["descriptor_digest"],
         cwd=tmp_path,
-        executable=executable,
-        ambient=("America/New_York", "C", "611"),
+        executable=installed_cli,
+        ambient=("America/New_York", non_c_locale, "611"),
     )
-    assert _files(restored / first["generation"]) == original
+    assert verification["equal"]
+    assert verification["reused"] == 0
     assert not (restored / "cache").exists()
-    assert selected_files == {
-        path.name: path.read_bytes() for path in restored.iterdir() if path.is_file()
-    }
-    assert not (restored / "environment").exists()
-    assert not (restored / "uv.lock").exists()

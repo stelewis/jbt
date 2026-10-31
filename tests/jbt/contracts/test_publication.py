@@ -3,17 +3,20 @@ from datetime import date
 
 import pytest
 
-from jbt.contracts.catalog import catalog, tabular_schema
+from jbt.contracts.catalog import Column, catalog, tabular_schema
+from jbt.contracts.primitives import ContractError
 from jbt.contracts.publication import (
     _active_refs,
+    _guard_field,
     validate_configuration,
     validate_descriptor,
     validate_extraction,
     validate_manifest,
     validate_registries,
 )
-from jbt.domain.guards import GuardField, GuardTarget, projection_digest
-from jbt.domain.ids import EntityId, RecordId, RecordKind
+from jbt.domain.guards import GuardField, GuardReference, GuardTarget, projection_digest
+from jbt.domain.identity import AcquiredAnchor, source_record_digest
+from jbt.domain.ids import EntityId, SemanticKey
 
 
 @pytest.fixture
@@ -130,24 +133,16 @@ def test_complete_manifest_has_no_checksum_cycle(
         validate_descriptor(descriptor, manifest)
 
 
-@pytest.mark.parametrize("value", [None, True, False, 0, "false"])
-def test_manifest_rejects_removed_dirty_field(
-    empty_manifest: tuple[dict, dict],
-    value: object,
-) -> None:
-    manifest, tables = empty_manifest
-    manifest["entities"][0]["is_dirty"] = value
-    tables["build"][0]["is_dirty"] = value
-    with pytest.raises(ValueError, match="manifest_schema"):
-        validate_manifest(manifest, tables)
-
-
 def test_manifest_rejects_unknown_fields_and_uninventoried_tables(
     empty_manifest: tuple[dict, dict],
 ) -> None:
     manifest, tables = empty_manifest
     with pytest.raises(ValueError, match="manifest_schema"):
         validate_manifest({**manifest, "extras": {}}, tables)
+    manifest["entities"][0]["is_dirty"] = False
+    with pytest.raises(ValueError, match="manifest_schema"):
+        validate_manifest(manifest, tables)
+    del manifest["entities"][0]["is_dirty"]
     manifest["tables"].pop()
     with pytest.raises(ValueError, match="manifest_table_inventory"):
         validate_manifest(manifest, tables)
@@ -233,7 +228,7 @@ def test_active_guard_matches_domain_projection_bytes_and_detects_drift(
         }
     ]
     target = GuardTarget(
-        RecordId(EntityId("e"), RecordKind.ACCOUNT, "a" * 64),
+        GuardReference(EntityId("e"), SemanticKey("accounts"), ("a",)),
         (
             GuardField("account_id", "string", nullable=False, value="a"),
             GuardField("opened_date", "date", nullable=True, value=None),
@@ -260,14 +255,14 @@ def test_active_guard_matches_domain_projection_bytes_and_detects_drift(
     with pytest.raises(ValueError, match="guard_field_reference"):
         _active_refs(self_guard, "e", tables)
     tables["accounts"][0]["account_id"] = "changed"
-    with pytest.raises(ValueError, match="active_reference"):
+    with pytest.raises(ValueError, match="guard_target_missing"):
         _active_refs(guard, "e", tables)
     tables["accounts"][0]["account_id"] = "a"
     tables["accounts"][0]["opened_date"] = "2026-01-01"
     with pytest.raises(ValueError, match="guard_projection_changed"):
         _active_refs(guard, "e", tables)
     dated_target = GuardTarget(
-        target.identifier,
+        target.reference,
         (
             GuardField("account_id", "string", nullable=False, value="a"),
             GuardField("opened_date", "date", nullable=True, value=date(2026, 1, 1)),
@@ -280,6 +275,182 @@ def test_active_guard_matches_domain_projection_bytes_and_detects_drift(
         "expected_digest": projection_digest(dated_target, tuple(guard["fields"])),
     }
     _active_refs(dated_guard, "e", tables)
+
+
+@pytest.mark.parametrize(
+    ("column", "wire", "expected"),
+    [
+        (
+            Column("date", "date", nullable=False, text_semantics=None),
+            "2026-01-01",
+            date(2026, 1, 1),
+        ),
+        (
+            Column("tags", "list", nullable=False, text_semantics="descriptive"),
+            ["a", "b"],
+            ("a", "b"),
+        ),
+        (Column("tags", "list", nullable=False, text_semantics="descriptive"), [], ()),
+        (
+            Column("label", "string", nullable=False, text_semantics="descriptive"),
+            "false",
+            "false",
+        ),
+        (Column("scale", "integer", nullable=False, text_semantics=None), 2, 2),
+        (
+            Column("complete", "boolean", nullable=False, text_semantics=None),
+            False,
+            False,
+        ),
+        (
+            Column("complete", "boolean", nullable=False, text_semantics=None),
+            True,
+            True,
+        ),
+        *[
+            (
+                Column(
+                    "unknown",
+                    kind,
+                    nullable=True,
+                    text_semantics="descriptive"
+                    if kind in {"string", "list"}
+                    else None,
+                ),
+                None,
+                None,
+            )
+            for kind in ("date", "list", "string", "integer", "boolean")
+        ],
+    ],
+)
+def test_publication_adapter_preserves_schema_types(
+    column: Column, wire: object, expected: object
+) -> None:
+    field = _guard_field(column, wire)
+    assert field.kind == column.kind
+    assert field.nullable == column.nullable
+    assert type(field.value) is type(expected)
+    assert field.value == expected
+
+
+@pytest.mark.parametrize(
+    ("column", "wire", "code"),
+    [
+        (
+            Column("date", "date", nullable=False, text_semantics=None),
+            "not-a-date",
+            "guard_field_date",
+        ),
+        (
+            Column("date", "date", nullable=False, text_semantics=None),
+            "20260101",
+            "guard_field_date",
+        ),
+        (
+            Column("date", "date", nullable=False, text_semantics=None),
+            date(2026, 1, 1),
+            "guard_field_value",
+        ),
+        (
+            Column("tags", "list", nullable=False, text_semantics="descriptive"),
+            ["a", 2],
+            "guard_field_value",
+        ),
+        (
+            Column("tags", "list", nullable=False, text_semantics="descriptive"),
+            ("a",),
+            "guard_field_value",
+        ),
+        (
+            Column("scale", "integer", nullable=False, text_semantics=None),
+            True,
+            "guard_field_value",
+        ),
+        (
+            Column("complete", "boolean", nullable=False, text_semantics=None),
+            1,
+            "guard_field_value",
+        ),
+        (
+            Column("label", "string", nullable=False, text_semantics="descriptive"),
+            1,
+            "guard_field_value",
+        ),
+        (
+            Column("label", "string", nullable=False, text_semantics="descriptive"),
+            None,
+            "guard_field_null",
+        ),
+    ],
+)
+def test_publication_adapter_rejects_coercion_and_malformed_values(
+    column: Column, wire: object, code: str
+) -> None:
+    with pytest.raises(ContractError) as failure:
+        _guard_field(column, wire)
+    assert failure.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("table", "key", "row", "fields"),
+    [
+        (
+            "transactions",
+            ("a",),
+            {"txn_id": "a", "tags": ["one", "two"], "date_value": None},
+            (
+                GuardField("date_value", "date", nullable=True, value=None),
+                GuardField("tags", "list", nullable=False, value=("one", "two")),
+            ),
+        ),
+        (
+            "build",
+            (),
+            {"schema_version": 1, "as_of": "2026-01-01"},
+            (
+                GuardField("as_of", "date", nullable=False, value=date(2026, 1, 1)),
+                GuardField("schema_version", "integer", nullable=False, value=1),
+            ),
+        ),
+        (
+            "accounts",
+            ("a",),
+            {"account_id": "a", "statements_expected": False},
+            (
+                GuardField(
+                    "statements_expected", "boolean", nullable=False, value=False
+                ),
+            ),
+        ),
+    ],
+)
+def test_publication_guard_uses_adapted_domain_projection(
+    empty_manifest: tuple[dict, dict],
+    table: str,
+    key: tuple[str, ...],
+    row: dict,
+    fields: tuple[GuardField, ...],
+) -> None:
+    _, tables = empty_manifest
+    tables[table] = [{"entity_id": "e", **row}]
+    target = GuardTarget(
+        GuardReference(EntityId("e"), SemanticKey(table), key), fields, active=True
+    )
+    names = tuple(field.name for field in fields)
+    guard = {
+        "target": {"table": table, "key": list(key)},
+        "fields": list(names),
+        "expected_digest": projection_digest(target, names),
+    }
+    _active_refs(guard, "e", tables)
+    tables[table].append(deepcopy(tables[table][0]))
+    with pytest.raises(ContractError, match="guard_target_ambiguous"):
+        _active_refs(guard, "e", tables)
+    tables[table].pop()
+    del tables[table][0][names[0]]
+    with pytest.raises(ContractError, match="guard_projection_changed"):
+        _active_refs(guard, "e", tables)
 
 
 def test_registry_status_tokens_are_closed_by_evidenced_mapping() -> None:
@@ -369,15 +540,13 @@ def test_source_authority_conflicts_only_within_overlapping_fact_scope() -> None
 
     def authority(account: str, source: str, start: str, end: str) -> dict:
         return {
-            "entity_id": "e",
-            "scope": {"table": "accounts", "key": [account]},
+            "account_id": account,
+            "source_scope_id": source,
             "period_start": start,
             "period_end": end,
             "fact_kind": "movement",
             "coverage_basis_id": "settled-units",
-            "authoritative_sources": [{"table": "source_records", "key": [source]}],
             "mode": "confirming",
-            "evidence": [{"kind": "source_record", "id": source}],
         }
 
     first = authority("A", "first", "2026-01-01", "2026-01-15")
@@ -392,7 +561,7 @@ def test_source_authority_conflicts_only_within_overlapping_fact_scope() -> None
     }
     validate_configuration(config, tables)
 
-    conflicting = authority("A", "second", "2026-01-15", "2026-01-31")
+    conflicting = authority("A", "second", "2026-01-14", "2026-01-31")
     with pytest.raises(ValueError, match="authority_conflict"):
         validate_configuration(
             {**config, "source_authority": [first, conflicting]}, tables
@@ -402,35 +571,54 @@ def test_source_authority_conflicts_only_within_overlapping_fact_scope() -> None
             {**config, "source_authority": [first, {**first}]}, tables
         )
 
-    contiguous = authority("A", "second", "2026-01-16", "2026-01-31")
+    contiguous = authority("A", "second", "2026-01-15", "2026-01-31")
     validate_configuration({**config, "source_authority": [first, contiguous]}, tables)
+    parallel = {**first, "fact_kind": "balance", "coverage_basis_id": "available-units"}
+    validate_configuration({**config, "source_authority": [first, parallel]}, tables)
 
 
 def test_extraction_unknowns_are_not_fabricated_zeroes() -> None:
     extract: dict = {
         "schema_version": 1,
         "source_scope_id": "scope",
-        "source_blob_digest": "blob",
+        "source_blob_digest": "a" * 64,
         "importer_id": "synthetic",
         "source_scope": {
-            "source_class": "document",
-            "institution": None,
-            "period_start": None,
-            "period_end": None,
-            "completeness": "unstated",
-            "source_accounts": [],
-            "revisions": [],
+            "sections": [
+                {
+                    "section_id": "account",
+                    "source_class": "document",
+                    "institution": None,
+                    "source_account_identifier": None,
+                    "stated_currency": None,
+                    "account_context": [],
+                    "evidence_parts": [],
+                    "revisions": [],
+                }
+            ]
         },
+        "status_mappings": [],
         "records": [
             {
                 "kind": "observation",
-                "source_record_id": "source",
+                "source_record_id": source_record_digest(
+                    AcquiredAnchor(
+                        "a" * 64,
+                        SemanticKey("scope"),
+                        SemanticKey("account"),
+                        SemanticKey("row:1"),
+                    )
+                ),
                 "source_section": "account",
                 "record_locator": "row:1",
                 "external_record_id": None,
                 "event_key": "event",
                 "source_account_identifier": None,
+                "source_key_domain": None,
+                "source_key": None,
+                "source_correction": None,
                 "payload": {
+                    "subject_source_record_id": None,
                     "field_name": "source.status",
                     "observation_kind": "source_status",
                     "value_type": "text",

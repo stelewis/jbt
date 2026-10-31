@@ -31,10 +31,12 @@ from jbt.contracts.schemas import (
 from jbt.domain.identity import (
     AcquiredAnchor,
     Occurrence,
+    SourceKeyAnchor,
     child_id,
     declaration_id,
     event_id,
     revision_id,
+    source_record_digest,
     successor_lot_id,
 )
 from jbt.domain.ids import EntityId, RecordId, RecordKind, SemanticKey
@@ -125,6 +127,37 @@ class _Bundle:
         self.sequence = 0
 
     def add(self, table: str, **fields: object) -> dict:
+        if table == "source_records":
+            alias = fields["source_record_id"]
+            components = [
+                self.resolve(fields[name])
+                for name in (
+                    "source_blob_digest",
+                    "source_scope_id",
+                    "source_section",
+                    "record_locator",
+                )
+            ]
+            if (
+                not isinstance(alias, str)
+                or not alias.startswith("@source:")
+                or not all(isinstance(value, str) for value in components)
+            ):
+                message = "Source fixture requires an alias and a complete anchor"
+                raise ValueError(message)
+            digest, scope, section, locator = components
+            assert isinstance(digest, str)
+            assert isinstance(scope, str)
+            assert isinstance(section, str)
+            assert isinstance(locator, str)
+            self.aliases[alias[1:]] = source_record_digest(
+                AcquiredAnchor(
+                    digest,
+                    SemanticKey(scope),
+                    SemanticKey(section),
+                    SemanticKey(locator),
+                )
+            )
         if table == "lots":
             lot_id = fields["lot_id"]
             origin_key = fields["origin_key"]
@@ -311,10 +344,10 @@ class _Bundle:
             self.add("positions", **fields, declaration_id=declaration)
             self.positions[position["id"]] = fields
 
-    def event(self, event: dict) -> None:
-        alias = event["id"]
-        source_alias = "source:" + alias
-        source_bytes = (event["evidence"] + "\n").encode()
+    def source_record(
+        self, alias: str, evidence: str, key: dict | None, statement: str | None
+    ) -> AcquiredAnchor:
+        source_bytes = (evidence + "\n").encode()
         digest = sha256(source_bytes).hexdigest()
         self.sources[digest] = source_bytes.decode()
         anchor = AcquiredAnchor(
@@ -323,8 +356,40 @@ class _Bundle:
             SemanticKey("events"),
             SemanticKey("json:" + alias),
         )
+        self.add(
+            "source_records",
+            source_record_id=_ref("source:" + alias),
+            source_blob_digest=digest,
+            source_scope_id=anchor.namespace.value,
+            source_section=anchor.section.value,
+            record_locator=anchor.locator.value,
+            input_kind="brokerage_statement",
+            statement_id=statement,
+            source_key_domain=key["domain"] if key else None,
+            source_key=key["key"] if key else None,
+        )
+        return anchor
+
+    def event(self, event: dict) -> None:
+        alias = event["id"]
+        source_alias = "source:" + alias
+        key = event.get("source_key")
+        acquired = self.source_record(
+            alias, event["evidence"], key, event.get("statement")
+        )
+        anchor = (
+            SourceKeyAnchor(
+                acquired.namespace,
+                acquired.section,
+                SemanticKey(key["domain"]),
+                SemanticKey(key["key"]),
+            )
+            if key
+            else acquired
+        )
+        event_key = event.get("event_key", alias)
         identity = event_id(
-            EntityId(self.entity), Occurrence(anchor, SemanticKey(alias))
+            EntityId(self.entity), Occurrence(anchor, SemanticKey(event_key))
         )
         self.aliases[alias] = identity.value
         self.aliases["step:" + alias] = child_id(
@@ -332,25 +397,48 @@ class _Bundle:
         ).value
         self.step_events["step:" + alias] = identity.value
         self.add(
-            "source_records",
-            source_record_id=_ref(source_alias),
-            source_blob_digest=digest,
-            source_scope_id="synthetic-fixture",
-            source_section="events",
-            record_locator="json:" + alias,
-            input_kind="brokerage_statement",
-            statement_id=event.get("statement"),
-        )
-        self.add(
             "economic_identities",
             record_kind="transaction",
             record_id=_ref(alias),
-            anchor_kind="source_record",
-            anchor_id=_ref(source_alias),
-            event_key=alias,
+            anchor_kind="source_key" if key else "source_record",
+            anchor_id=_json(
+                [
+                    acquired.namespace.value,
+                    acquired.section.value,
+                    key["domain"],
+                    key["key"],
+                ]
+            )
+            if key
+            else _ref(source_alias),
+            event_key=event_key,
             identity_state=event.get("identity_state", "active"),
             decision_declaration_id=event.get("identity_decision"),
         )
+        if event.get("identity_state", "active") == "active":
+            self.add(
+                "event_support",
+                txn_id=_ref(alias),
+                source_record_id=_ref(source_alias),
+                event_key=event_key,
+                support_kind="replaced"
+                if event.get("state", "recognized") == "retracted"
+                else "selected",
+            )
+        for supporting in event.get("support", []):
+            self.source_record(
+                supporting["id"],
+                supporting["evidence"],
+                supporting["source_key"],
+                supporting.get("statement"),
+            )
+            self.add(
+                "event_support",
+                txn_id=_ref(alias),
+                source_record_id=_ref("source:" + supporting["id"]),
+                event_key=event_key,
+                support_kind=supporting["kind"],
+            )
         recognized = event.get("state", "recognized") == "recognized"
         self.add(
             "transactions",
@@ -358,7 +446,10 @@ class _Bundle:
             event_kind=event.get("kind", "transaction"),
             event_state=event.get("state", "recognized"),
             review_state=event.get("review", "reviewed"),
-            description_as_stated=event["evidence"],
+            description_as_stated=event.get("description_as_stated", event["evidence"]),
+            payee=event.get("payee"),
+            narration=event.get("narration"),
+            tags=event.get("tags", []),
             date_posted=event["date"],
             **event.get("dates", {}),
         )
@@ -682,10 +773,10 @@ def load_case(case_id: str) -> FixtureCase:
     return bundle.finish()
 
 
-def fixture_cases() -> tuple[FixtureCase, ...]:
+def case_ids() -> tuple[str, ...]:
     index = json.loads((FIXTURES / "index.json").read_text())
-    return tuple(load_case(case_id) for case_id in index["cases"])
+    return tuple(index["cases"])
 
 
-def coverage_index() -> tuple[dict, ...]:
-    return tuple(json.loads((FIXTURES / "index.json").read_text())["coverage"])
+def fixture_cases() -> tuple[FixtureCase, ...]:
+    return tuple(load_case(case_id) for case_id in case_ids())

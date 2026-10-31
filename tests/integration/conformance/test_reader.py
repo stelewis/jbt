@@ -6,20 +6,26 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 from fractions import Fraction
-from pathlib import Path
+from shutil import copytree
 from typing import TYPE_CHECKING, cast
 
 import pytest
 from tests.integration.conformance.corpus import (
     approved_schemas,
+    case_ids,
 )
 from tests.integration.conformance.corpus import (
     load_case as load_specimen,
 )
 from tests.integration.conformance.reader import (
     ReaderError,
+    _json,
     _sequence_directions,
+    _source_key_event_id,
+    _validate_cell,
+    _validate_event_support,
     _validate_position_identities,
+    _validate_transfer_links,
     _wire_integers,
     canonical_bytes,
     check_assertions,
@@ -27,6 +33,7 @@ from tests.integration.conformance.reader import (
     logical_table_digest,
     read_snapshot,
     replay_rows,
+    validate_json,
     validate_rows,
 )
 
@@ -42,15 +49,14 @@ from jbt.artifacts.snapshot import (
 from jbt.contracts.catalog import catalog, tabular_schema
 from jbt.contracts.primitives import ContractError
 
-INDEX_CASE_IDS = tuple(
-    json.loads((Path(__file__).parent / "fixtures/index.json").read_text())["cases"]
-)
+INDEX_CASE_IDS = case_ids()
 SOURCE_SEQUENCE_DIRECTIONS = {
     ("synthetic-fixture", "statement-events", "source.sequence"): "ascending"
 }
 
 if TYPE_CHECKING:
-    from tests.integration.conformance.corpus import FixtureCase
+    from pathlib import Path
+
     from tests.integration.conformance.reader import ReplayResult, Row, Snapshot
 
 
@@ -86,35 +92,55 @@ def test_independent_wire_decoder_respects_tuple_schema_and_boolean_items() -> N
         _wire_integers({"key": ["2", "extra"]}, schema, schema)
 
 
-@pytest.mark.parametrize(
-    "case_id",
-    [
-        "cash",
-        "compound-expensed",
-        "compound-capitalized",
-        "compound-backfill",
-        "pools",
-        "multi-origin",
-        "multi-origin-alternative",
-    ],
-)
-def test_recorded_changes_reconstruct_hand_calculated_inventory(case_id: str) -> None:
+@pytest.mark.parametrize("damage", ["amount", "side", "reused", "missing", "transit"])
+def test_independent_transfer_reader_rejects_invalid_named_members(damage: str) -> None:
+    case = load_case("multi-origin")
+    _validate_transfer_links(case.tables)
+    members = [m for m in case.tables["links"] if m["link_kind"] == "transfer"]
+    outgoing = next(m for m in members if m["member_role"] == "outgoing")
+    posting = next(
+        p for p in case.tables["postings"] if p["posting_id"] == outgoing["member_id"]
+    )
+    if damage == "amount":
+        posting["amount_coefficient"] = "-1"
+    elif damage == "side":
+        case.tables["links"] = [outgoing]
+    elif damage == "reused":
+        case.tables["links"].append({**outgoing, "link_id": "another"})
+    elif damage == "missing":
+        outgoing["member_id"] = "missing"
+    else:
+        position = next(
+            p
+            for p in case.tables["positions"]
+            if p["position_id"] == posting["position_id"]
+        )
+        position["purpose"] = "in_transit"
+    with pytest.raises(ReaderError, match="transfer"):
+        _validate_transfer_links(case.tables)
+
+
+def test_schema_cache_preserves_mutation_and_local_reference_checks() -> None:
+    schema = {"type": "integer", "minimum": 0}
+    validate_json(1, schema)
+    schema["minimum"] = 2
+    with pytest.raises(ReaderError, match="approved schema"):
+        validate_json(1, schema)
+    with pytest.raises(ReaderError, match="nonlocal schema"):
+        validate_json({}, {"$ref": "https://invalid.example/schema"})
+
+
+@pytest.mark.parametrize("case_id", INDEX_CASE_IDS)
+def test_independent_rows_replay_hand_calculated_corpus(case_id: str) -> None:
     case = load_case(case_id)
     entity = case.tables["build"][0]["entity_id"]
+    validate_rows(
+        case.tables,
+        tabular_schema(),
+        source_sequence_directions=SOURCE_SEQUENCE_DIRECTIONS,
+    )
     result = replay_rows(case.tables, entity=entity)
-    for alias, expected in case.expected_answers.get("positions", {}).items():
-        assert result.quantity_positions[(entity, case.aliases[alias])] == Fraction(
-            expected
-        )
-    for alias, expected in case.expected_answers.get("inventory", {}).items():
-        position = case.aliases[alias]
-        states = [
-            state for key, state in result.inventory.items() if key[1] == position
-        ]
-        for component, amount in expected.items():
-            assert sum(getattr(state, component) for state in states) == Fraction(
-                amount
-            )
+    _assert_snapshot_oracles(case, case.tables, result, entity=entity)
 
 
 def test_inventory_changes_are_atomic_within_a_split_step() -> None:
@@ -564,6 +590,455 @@ def test_pool_identity_is_explicit_authored_id_not_declaration_key_hash() -> Non
         _validate_position_identities(case.tables)
 
 
+def source_key_support_tables() -> dict[str, list[Row]]:
+    # Fixed JBT v1 framing vector; UTF-8 lengths and textual "007" matter.
+    event_id = "a630143025f422bf7de5c922f5118f450805f122f532df1bcc50deacb8c70d3e"
+    return {
+        "source_records": [
+            {
+                "entity_id": "entity",
+                "source_record_id": "occurrence-original",
+                "source_scope_id": "feed",
+                "source_section": "account-é",
+                "source_key_domain": "FITID",
+                "source_key": "007",
+            }
+        ],
+        "transactions": [
+            {
+                "entity_id": "entity",
+                "txn_id": event_id,
+                "event_state": "recognized",
+            }
+        ],
+        "economic_identities": [
+            {
+                "entity_id": "entity",
+                "record_kind": "transaction",
+                "record_id": event_id,
+                "anchor_kind": "source_key",
+                "anchor_id": '["feed","account-é","FITID","007"]',
+                "event_key": "movement",
+                "identity_state": "active",
+            }
+        ],
+        "event_support": [
+            {
+                "entity_id": "entity",
+                "txn_id": event_id,
+                "source_record_id": "occurrence-original",
+                "event_key": "movement",
+                "support_kind": "selected",
+            }
+        ],
+        "book_steps": [],
+        "postings": [],
+    }
+
+
+def test_independent_source_key_support_preserves_textual_identity() -> None:
+    tables = source_key_support_tables()
+    original = tables["source_records"][0]
+    tables["source_records"].append(
+        {**original, "source_record_id": "occurrence-download"}
+    )
+    tables["event_support"].append(
+        {
+            **tables["event_support"][0],
+            "source_record_id": "occurrence-download",
+            "event_key": "pending-movement",
+            "support_kind": "confirming",
+        }
+    )
+    _validate_event_support(tables)
+    tables["transactions"][0]["description_as_stated"] = "changed mutable facts"
+    tables["transactions"][0]["amount_coefficient"] = "999"
+    _validate_event_support(tables)
+
+
+def test_independent_support_rejects_double_assignment_of_occurrence_component() -> (
+    None
+):
+    tables = source_key_support_tables()
+    tables["transactions"].append(
+        {**tables["transactions"][0], "txn_id": "other-event"}
+    )
+    tables["economic_identities"].append(
+        {
+            **tables["economic_identities"][0],
+            "record_id": "other-event",
+            "anchor_kind": "source_record",
+            "anchor_id": "occurrence-original",
+        }
+    )
+    tables["event_support"].append(
+        {**tables["event_support"][0], "txn_id": "other-event"}
+    )
+    with pytest.raises(ReaderError, match="component supports multiple events"):
+        _validate_event_support(tables)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("missing", "active event has no support"),
+        ("confirming", "active event has no selected evidence"),
+        ("source", "canonical event and source"),
+        ("transaction", "canonical event and source"),
+        ("identity", "canonical event and source"),
+        ("identity-and-support", "economic event lacks canonical identity"),
+        ("retracted", "replaced evidence only"),
+    ],
+)
+def test_independent_support_rejects_invalid_membership(
+    mutation: str, message: str
+) -> None:
+    tables = source_key_support_tables()
+    support = tables["event_support"][0]
+    if mutation == "missing":
+        tables["event_support"].clear()
+    elif mutation == "confirming":
+        support["support_kind"] = "confirming"
+    elif mutation == "source":
+        support["source_record_id"] = "absent"
+    elif mutation == "transaction":
+        support["txn_id"] = "absent"
+    elif mutation == "identity":
+        tables["economic_identities"].clear()
+    elif mutation == "identity-and-support":
+        tables["economic_identities"].clear()
+        tables["event_support"].clear()
+    else:
+        tables["transactions"][0]["event_state"] = "retracted"
+    with pytest.raises(ReaderError, match=message):
+        _validate_event_support(tables)
+
+
+@pytest.mark.parametrize(
+    ("state", "effect"),
+    [("pending", "book_steps"), ("cancelled", "postings"), ("retracted", "book_steps")],
+)
+def test_independent_support_does_not_admit_nonparticipating_booked_effects(
+    state: str, effect: str
+) -> None:
+    tables = source_key_support_tables()
+    transaction = tables["transactions"][0]
+    transaction["event_state"] = state
+    if state == "retracted":
+        tables["event_support"][0]["support_kind"] = "replaced"
+    _validate_event_support(tables)
+    tables[effect].append(
+        {
+            "entity_id": "entity",
+            "txn_id": transaction["txn_id"],
+            "step_id": "booked",
+        }
+    )
+    with pytest.raises(ReaderError, match="nonparticipating event has booked effects"):
+        _validate_event_support(tables)
+
+
+@pytest.mark.parametrize("retired", [False, True])
+def test_independent_source_key_history_keeps_original_tuple_after_retraction(
+    *, retired: bool
+) -> None:
+    tables = source_key_support_tables()
+    tables["transactions"][0]["event_state"] = "retracted"
+    tables["event_support"][0]["support_kind"] = "replaced"
+    if retired:
+        tables["economic_identities"][0]["identity_state"] = "retired"
+        tables["event_support"].clear()
+    _validate_event_support(tables)
+    tables["source_records"][0]["source_key"] = "replacement-key"
+    with pytest.raises(ReaderError, match="original retained evidence"):
+        _validate_event_support(tables)
+
+
+def test_independent_retired_membership_moves_to_survivor() -> None:
+    tables = source_key_support_tables()
+    tables["transactions"][0]["event_state"] = "retracted"
+    tables["economic_identities"][0]["identity_state"] = "retired"
+    retired_support = {**tables["event_support"][0], "support_kind": "replaced"}
+    tables["transactions"].append(
+        {"entity_id": "entity", "txn_id": "survivor", "event_state": "recognized"}
+    )
+    tables["economic_identities"].append(
+        {
+            **tables["economic_identities"][0],
+            "record_id": "survivor",
+            "anchor_kind": "source_record",
+            "anchor_id": "occurrence-original",
+            "identity_state": "active",
+        }
+    )
+    tables["event_support"][0]["txn_id"] = "survivor"
+    _validate_event_support(tables)
+    tables["event_support"].append(retired_support)
+    with pytest.raises(ReaderError, match="retired identity cannot have canonical"):
+        _validate_event_support(tables)
+
+
+def test_independent_active_retracted_event_requires_replaced_support() -> None:
+    tables = source_key_support_tables()
+    tables["transactions"][0]["event_state"] = "retracted"
+    tables["event_support"][0]["support_kind"] = "replaced"
+    _validate_event_support(tables)
+    tables["event_support"].clear()
+    with pytest.raises(ReaderError, match="active event has no support"):
+        _validate_event_support(tables)
+
+
+def test_independent_source_key_override_can_select_another_key_family() -> None:
+    tables = source_key_support_tables()
+    tables["source_records"].append(
+        {
+            **tables["source_records"][0],
+            "source_record_id": "occurrence-merged-family",
+            "source_key": "other-key",
+        }
+    )
+    original_support = {
+        **tables["event_support"][0],
+        "support_kind": "confirming",
+    }
+    tables["event_support"][0]["source_record_id"] = "occurrence-merged-family"
+    tables["event_support"][0]["event_key"] = "posted-movement"
+    tables["event_support"].append(original_support)
+    _validate_event_support(tables)
+    tables["source_records"][0]["source_key"] = "lost-original-key"
+    with pytest.raises(ReaderError, match="original retained evidence"):
+        _validate_event_support(tables)
+
+
+@pytest.mark.parametrize("anchor_kind", ["source_record", "source_key"])
+def test_independent_active_anchor_requires_its_own_supported_component(
+    anchor_kind: str,
+) -> None:
+    tables = source_key_support_tables()
+    identity = tables["economic_identities"][0]
+    identity["anchor_kind"] = anchor_kind
+    if anchor_kind == "source_record":
+        identity["anchor_id"] = "occurrence-original"
+    tables["source_records"].append(
+        {
+            **tables["source_records"][0],
+            "source_record_id": "other-occurrence",
+            "source_key": "other-key",
+        }
+    )
+    tables["event_support"].append(
+        {
+            **tables["event_support"][0],
+            "source_record_id": "other-occurrence",
+            "event_key": "posted-movement",
+            "support_kind": "confirming",
+        }
+    )
+    _validate_event_support(tables)
+    tables["event_support"][0]["event_key"] = "different-original-component"
+    with pytest.raises(ReaderError, match="anchor component lacks supporting evidence"):
+        _validate_event_support(tables)
+
+
+def test_independent_authored_identity_cannot_have_source_support() -> None:
+    tables = source_key_support_tables()
+    identity = tables["economic_identities"][0]
+    identity["anchor_kind"] = "declaration"
+    identity["anchor_id"] = "authored-key"
+    with pytest.raises(ReaderError, match="authored event cannot have source support"):
+        _validate_event_support(tables)
+    tables["event_support"].clear()
+    _validate_event_support(tables)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("key", "original retained evidence"),
+        ("domain", "original retained evidence"),
+        ("scope", "original retained evidence"),
+        ("section", "original retained evidence"),
+        ("hash", "identity hash mismatch"),
+        ("component", "identity hash mismatch"),
+        ("empty-component", "event key requires nonempty NFC text"),
+        ("unpaired-key", "key and domain must occur together"),
+        ("unpaired-domain", "key and domain must occur together"),
+        ("numeric-anchor", "four nonempty strings"),
+        ("escaped-anchor", "noncanonical source-key anchor"),
+        ("malformed-anchor", "invalid source-key anchor JSON"),
+    ],
+)
+def test_independent_source_key_identity_rejects_inconsistent_anchor(
+    mutation: str, message: str
+) -> None:
+    tables = source_key_support_tables()
+    identity = tables["economic_identities"][0]
+    if mutation in {"key", "domain", "scope", "section"}:
+        field = {
+            "key": "source_key",
+            "domain": "source_key_domain",
+            "scope": "source_scope_id",
+            "section": "source_section",
+        }[mutation]
+        tables["source_records"][0][field] = "different"
+    elif mutation == "hash":
+        identity["record_id"] = "0" * 64
+        tables["transactions"][0]["txn_id"] = identity["record_id"]
+        tables["event_support"][0]["txn_id"] = identity["record_id"]
+    elif mutation in {"component", "empty-component"}:
+        identity["event_key"] = "" if mutation == "empty-component" else "fee"
+        tables["event_support"][0]["event_key"] = identity["event_key"]
+    elif mutation.startswith("unpaired"):
+        tables["source_records"].append(
+            {
+                **tables["source_records"][0],
+                "source_record_id": "unused-occurrence",
+                "source_key"
+                if mutation == "unpaired-key"
+                else "source_key_domain": None,
+            }
+        )
+    elif mutation == "numeric-anchor":
+        identity["anchor_id"] = '["feed","account-é","FITID",7]'
+    elif mutation == "escaped-anchor":
+        identity["anchor_id"] = '["feed","account-\\u00e9","FITID","007"]'
+    else:
+        identity["anchor_id"] = "["
+    with pytest.raises(ReaderError, match=message):
+        _validate_event_support(tables)
+
+
+def test_independent_snapshot_contract_requires_acquired_event_support() -> None:
+    case = load_case("cash")
+    case.tables["event_support"].clear()
+    with pytest.raises(ReaderError, match="active event has no support"):
+        validate_rows(case.tables, tabular_schema())
+
+
+def test_independent_keyed_overlap_reconstructs_distinct_identical_purchases() -> None:
+    case = load_case("keyed-overlap")
+    confirmation = next(
+        row
+        for row in case.tables["event_support"]
+        if row["txn_id"] == case.aliases["credit"]
+        and row["support_kind"] == "confirming"
+    )
+    original_key = json.dumps(
+        [
+            confirmation["txn_id"],
+            confirmation["source_record_id"],
+            confirmation["event_key"],
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    confirmation["event_key"] = "pending-transaction"
+    updated_key = json.dumps(
+        [
+            confirmation["txn_id"],
+            confirmation["source_record_id"],
+            confirmation["event_key"],
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    for table in ("observations", "provenance"):
+        for row in case.tables[table]:
+            if (
+                row["record_kind"] == "event_support"
+                and row["record_id"] == original_key
+            ):
+                row["record_id"] = updated_key
+    support_specification = next(
+        row for row in tabular_schema()["tables"] if row["name"] == "event_support"
+    )
+    support_keys = {
+        tuple(row[field] for field in support_specification["primary_key"])
+        for row in case.tables["event_support"]
+    }
+    assert len(support_keys) == len(case.tables["event_support"])
+    validate_rows(case.tables, tabular_schema())
+    entity = case.tables["build"][0]["entity_id"]
+    result = replay_rows(case.tables, entity=entity)
+    assert result.quantity_positions[(entity, case.aliases["cash-A"])] == Fraction(110)
+    keyed = [
+        row
+        for row in case.tables["economic_identities"]
+        if row["anchor_kind"] == "source_key"
+    ]
+    assert len(keyed) == case.expected_answers["keyed_events"] == 3
+    assert {json.loads(row["anchor_id"])[3] for row in keyed} == {"C1", "D1", "D2"}
+    assert case.aliases["debit"] != case.aliases["identical-debit"]
+    for alias, count in case.expected_answers["support_counts"].items():
+        support = [
+            row
+            for row in case.tables["event_support"]
+            if row["txn_id"] == case.aliases[alias]
+        ]
+        assert len(support) == count
+        assert sum(row["support_kind"] == "selected" for row in support) == 1
+        assert all(
+            row["event_key"] == "transaction"
+            for row in support
+            if row["support_kind"] == "selected"
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("double-assignment", "duplicate key: event_support"),
+        ("missing-support", "active event has no support"),
+        ("source-key", "original retained evidence"),
+        ("key-hash", "identity hash mismatch"),
+        ("anchor-component", "anchor component lacks supporting evidence"),
+    ],
+)
+def test_independent_keyed_overlap_rejects_broken_membership(
+    mutation: str, message: str
+) -> None:
+    case = load_case("keyed-overlap")
+    credit = case.aliases["credit"]
+    if mutation == "double-assignment":
+        support = next(
+            row for row in case.tables["event_support"] if row["txn_id"] == credit
+        )
+        case.tables["event_support"].append(
+            {**support, "txn_id": case.aliases["debit"]}
+        )
+        specification = next(
+            row for row in tabular_schema()["tables"] if row["name"] == "event_support"
+        )
+        case.tables["event_support"].sort(
+            key=lambda row: tuple(row[key] for key in specification["sort_key"])
+        )
+    elif mutation == "missing-support":
+        case.tables["event_support"] = [
+            row for row in case.tables["event_support"] if row["txn_id"] != credit
+        ]
+    elif mutation == "source-key":
+        for source in case.tables["source_records"]:
+            if source["source_key"] == "C1":
+                source["source_key"] = "wrong-key"
+    elif mutation == "anchor-component":
+        for row in case.tables["event_support"]:
+            if row["txn_id"] == credit:
+                row["event_key"] = "other-source-component"
+    else:
+        identity = next(
+            row
+            for row in case.tables["economic_identities"]
+            if row["record_id"] == credit
+        )
+        anchor = json.loads(identity["anchor_id"])
+        anchor[3] = "wrong-key"
+        identity["anchor_id"] = json.dumps(
+            anchor, ensure_ascii=False, separators=(",", ":")
+        )
+    with pytest.raises(ReaderError, match=message):
+        validate_rows(case.tables, tabular_schema())
+
+
 @pytest.mark.parametrize(
     ("target_kind", "target_alias", "expected"),
     [
@@ -746,13 +1221,27 @@ def artifact_root(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.fixture(scope="module")
+def cash_snapshot(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, str]:
+    root = tmp_path_factory.mktemp("reader-cash")
+    return root, _snapshot(root)
+
+
+@pytest.fixture
+def mutable_cash_snapshot(
+    artifact_root: Path, cash_snapshot: tuple[Path, str]
+) -> tuple[Path, str]:
+    root, digest = cash_snapshot
+    copytree(root, artifact_root, dirs_exist_ok=True)
+    return artifact_root, digest
+
+
 def _snapshot(  # noqa: PLR0913
     root: Path,
     *,
     empty: bool = False,
     case_id: str = "cash",
     staged_tables: dict[str, list[Row]] | None = None,
-    active_correction: str | None = None,
     sequence_direction: str = "ascending",
     output_payloads: tuple[OutputPayload, ...] = (),
     extra_schemas: dict[str, dict] | None = None,
@@ -844,18 +1333,8 @@ def _snapshot(  # noqa: PLR0913
         "effective_declarations": [
             {"entity_id": row["entity_id"], "declaration_id": row["declaration_id"]}
             for row in tables["declarations"]
-            if not empty and row["declaration_kind"] not in {"correction", "identity"}
-        ]
-        + (
-            [
-                {
-                    "entity_id": row["entity_id"],
-                    "declaration_id": case.aliases["declaration:" + active_correction],
-                }
-            ]
-            if active_correction is not None
-            else []
-        ),
+            if not empty and row["declaration_kind"] != "identity"
+        ],
         "bindings": [
             {
                 "entity_id": row["entity_id"],
@@ -968,15 +1447,8 @@ def test_duplicate_extract_artifacts_are_not_duplicate_financial_evidence(
         "source_scope_id": "selected-scope",
         "source_blob_digest": "sha256:synthetic",
         "importer_id": "ofx",
-        "source_scope": {
-            "source_class": "statement",
-            "institution": None,
-            "period_start": "2026-01-01",
-            "period_end": "2026-01-31",
-            "completeness": "unstated",
-            "source_accounts": [],
-            "revisions": [],
-        },
+        "source_scope": {"sections": []},
+        "status_mappings": [],
         "records": [],
         "unsupported_content": [],
     }
@@ -1050,6 +1522,7 @@ def test_execution_observations_preserve_independent_financial_identity(
                     "architecture": "synthetic",
                 },
                 "distributions": distributions,
+                "importers": [],
             },
             integer_strings=False,
         )
@@ -1077,14 +1550,6 @@ def test_execution_observations_preserve_independent_financial_identity(
         )
         digests.append(snapshot.financial_digest)
     assert digests[0] == digests[1]
-
-
-@pytest.mark.parametrize("unobserved", [None, False, True, 0, "false"])
-def test_independent_reader_rejects_removed_dirty_field(unobserved: object) -> None:
-    tables = deepcopy(load_specimen("cash").tables)
-    tables["build"][0]["is_dirty"] = unobserved
-    with pytest.raises(ReaderError, match="wrong fields: build"):
-        validate_rows(tables, tabular_schema())
 
 
 def test_independent_reader_accepts_opaque_inventory(artifact_root: Path) -> None:
@@ -1164,8 +1629,8 @@ def test_extra_schema_requires_independent_pin_and_does_not_change_financial_con
     assert snapshots[0].financial_digest == snapshots[1].financial_digest
 
 
-@pytest.mark.parametrize("case_id", INDEX_CASE_IDS)
-def test_every_indexed_snapshot_replays_hand_calculated_corpus(
+@pytest.mark.parametrize("case_id", ["compound-capitalized", "pools", "reference"])
+def test_serialized_snapshot_replays_representative_financial_shapes(
     artifact_root: Path, case_id: str
 ) -> None:
     digest = _snapshot(artifact_root, case_id=case_id)
@@ -1185,105 +1650,6 @@ def test_every_indexed_snapshot_replays_hand_calculated_corpus(
         assert result.settlements[(entity, case.aliases["USD"])] == Fraction(
             case.expected_answers["settlement_total"]
         )
-
-
-def _staged_correction_rows(
-    case: FixtureCase, alias: str, amount: str
-) -> dict[str, list[Row]]:
-    tables = deepcopy(case.tables)
-    replacements = {
-        case.aliases["credit-cash"]: amount,
-        case.aliases["credit-income"]: "-" + amount,
-    }
-    for table in ("postings", "posting_weights"):
-        for row in tables[table]:
-            if replacement := replacements.get(row["posting_id"]):
-                row["amount_coefficient"] = replacement
-                row["amount_scale"] = 0
-                row["amount_source_scale"] = None
-    if alias != "retract-credit":
-        for row in tables["provenance"]:
-            _stage_correction_evidence(
-                row, case, replacements, case.aliases["declaration:" + alias]
-            )
-    return tables
-
-
-def _stage_correction_evidence(
-    row: Row, case: FixtureCase, replacements: dict[str, str], active: str
-) -> None:
-    if row["field_name"] != "amount":
-        return
-    posting = json.loads(row["record_id"])[0]
-    if posting not in replacements:
-        return
-    if row["record_kind"] == "postings":
-        row["value_origin"] = (
-            "correction" if posting == case.aliases["credit-cash"] else "booking"
-        )
-        row["evidence_kind"] = "declaration"
-        row["evidence_id"] = active
-        if posting == case.aliases["credit-income"]:
-            row["derivation_id"] = "booked-counterpart-from-correction-v1"
-    elif row["record_kind"] == "posting_weights":
-        row["evidence_kind"] = "declaration"
-        row["evidence_id"] = active
-        row["derivation_id"] = "booked-weight-from-correction-v1"
-
-
-def test_reviewed_correction_stages_are_distinct_pinned_snapshots(
-    artifact_root: Path,
-) -> None:
-    case = load_specimen("correction-history")
-    original_event = case.aliases["credit"]
-    original_leg = case.aliases["credit-cash"]
-    financial_digests = []
-    for alias, amount, expected in zip(
-        ("correct-credit", "replace-credit", "retract-credit"),
-        ("25", "22", "20"),
-        case.expected_answers["correction_cash"],
-        strict=True,
-    ):
-        location = artifact_root / alias
-        location.mkdir()
-        descriptor = _snapshot(
-            location,
-            case_id=case.case_id,
-            staged_tables=_staged_correction_rows(case, alias, amount),
-            active_correction=alias,
-        )
-        snapshot = read_snapshot(
-            location,
-            descriptor_digest=descriptor,
-            expected_schema_digests=approved_schemas(),
-        )
-        assert {
-            row["declaration_id"]
-            for row in snapshot.manifest["effective_declarations"]
-            if row["declaration_id"]
-            in {
-                case.aliases["declaration:" + name]
-                for name in ("correct-credit", "replace-credit", "retract-credit")
-            }
-        } == {case.aliases["declaration:" + alias]}
-        assert {row["txn_id"] for row in snapshot.tables["transactions"]} == {
-            row["txn_id"] for row in case.tables["transactions"]
-        }
-        assert any(
-            row["posting_id"] == original_leg and row["txn_id"] == original_event
-            for row in snapshot.tables["postings"]
-        )
-        cash = sum(
-            (
-                Fraction(int(row["amount_coefficient"]), 10 ** row["amount_scale"])
-                for row in snapshot.tables["postings"]
-                if row["position_id"] == case.aliases["cash-A"]
-            ),
-            Fraction(),
-        )
-        assert cash == Fraction(expected)
-        financial_digests.append(snapshot.financial_digest)
-    assert len(set(financial_digests)) == 3
 
 
 def _assert_snapshot_oracles(
@@ -1706,9 +2072,9 @@ def _assert_time_loan_oracles(case: Case, tables: dict[str, list[Row]]) -> int:
 
 
 def test_read_exact_pinned_snapshot_with_producer_imports_denied(
-    artifact_root: Path,
+    cash_snapshot: tuple[Path, str],
 ) -> None:
-    digest = _snapshot(artifact_root)
+    root, digest = cash_snapshot
     script = """
 import importlib.abc
 import json
@@ -1735,7 +2101,7 @@ print(snapshot.financial_digest)
             sys.executable,
             "-c",
             script,
-            str(artifact_root),
+            str(root),
             digest,
             json.dumps(approved_schemas()),
         ],
@@ -1745,18 +2111,22 @@ print(snapshot.financial_digest)
         timeout=60,
     )
     snapshot = read_snapshot(
-        artifact_root,
+        root,
         descriptor_digest=digest,
         expected_schema_digests=approved_schemas(),
     )
     assert result.stdout.strip() == snapshot.financial_digest
+    production = read_production_snapshot(root, digest)
+    assert production.manifest["logical_content_digest"] == snapshot.financial_digest
 
 
 @pytest.mark.parametrize(
     "mutation", ["bytes", "extra", "missing", "symlink", "version"]
 )
-def test_pinned_snapshot_rejects_corruption(artifact_root: Path, mutation: str) -> None:
-    digest = _snapshot(artifact_root)
+def test_pinned_snapshot_rejects_corruption(
+    mutable_cash_snapshot: tuple[Path, str], mutation: str
+) -> None:
+    artifact_root, digest = mutable_cash_snapshot
     if mutation == "bytes":
         (artifact_root / "accounts.parquet").write_bytes(b"changed")
     elif mutation == "extra":
@@ -1783,9 +2153,9 @@ def test_pinned_snapshot_rejects_corruption(artifact_root: Path, mutation: str) 
 
 
 def test_version_one_schema_cannot_redefine_approved_table_semantics(
-    artifact_root: Path,
+    mutable_cash_snapshot: tuple[Path, str],
 ) -> None:
-    _snapshot(artifact_root)
+    artifact_root, _ = mutable_cash_snapshot
     schema_path = artifact_root / "tabular_schema.json"
     schema = json.loads(schema_path.read_bytes())
     schema["tables"][0]["columns"][0]["nullable"] = True
@@ -1809,9 +2179,9 @@ def test_version_one_schema_cannot_redefine_approved_table_semantics(
 
 
 def test_rechecks_semantics_after_mechanical_checksums_are_recomputed(
-    artifact_root: Path,
+    mutable_cash_snapshot: tuple[Path, str],
 ) -> None:
-    digest = _snapshot(artifact_root)
+    artifact_root, digest = mutable_cash_snapshot
     snapshot = read_snapshot(
         artifact_root,
         descriptor_digest=digest,
@@ -1819,65 +2189,25 @@ def test_rechecks_semantics_after_mechanical_checksums_are_recomputed(
     )
     postings = snapshot.tables["postings"]
     postings.append(deepcopy(postings[-1]))
-    settings = WriterSettings(
-        compression=Compression.ZSTD,
-        row_group_size=1024,
-        dictionary=False,
-        statistics=True,
+    mutated_digest = _rehash_mechanical_checksums(
+        artifact_root, snapshot, table="postings"
     )
-    specifications = {table.name: table for table in catalog()}
-    write_table(
-        artifact_root / "postings.parquet",
-        specifications["postings"],
-        postings,
-        settings,
-    )
-    manifest = snapshot.manifest
-    entry = next(row for row in manifest["tables"] if row["name"] == "postings")
-    columns = next(
-        table["columns"]
-        for table in snapshot.schema["tables"]
-        if table["name"] == "postings"
-    )
-    entry["byte_digest"] = hashlib.sha256(
-        (artifact_root / "postings.parquet").read_bytes()
-    ).hexdigest()
-    entry["logical_digest"] = logical_table_digest(columns, postings, version=1)
-    entry["row_count"] = str(len(postings))
-    manifest_bytes = canonical_bytes(manifest)
-    (artifact_root / "manifest.json").write_bytes(manifest_bytes)
-    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
-    for row in snapshot.tables["build"]:
-        row["manifest_digest"] = manifest_digest
-    write_table(
-        artifact_root / "build.parquet",
-        specifications["build"],
-        snapshot.tables["build"],
-        settings,
-    )
-    descriptor = json.loads((artifact_root / "descriptor.json").read_bytes())
-    descriptor["manifest_digest"] = manifest_digest
-    for payload in descriptor["payloads"]:
-        payload["byte_digest"] = hashlib.sha256(
-            (artifact_root / payload["path"]).read_bytes()
-        ).hexdigest()
-    descriptor_bytes = canonical_bytes(descriptor)
-    (artifact_root / "descriptor.json").write_bytes(descriptor_bytes)
     with pytest.raises(ReaderError, match="duplicate key: postings"):
         read_snapshot(
             artifact_root,
-            descriptor_digest=hashlib.sha256(descriptor_bytes).hexdigest(),
+            descriptor_digest=mutated_digest,
             expected_schema_digests=approved_schemas(),
         )
 
 
-def _rehash_changed_snapshot(
+def _rehash_mechanical_checksums(
     root: Path,
     snapshot: Snapshot,
     *,
     table: str | None = None,
     resource: str | None = None,
 ) -> str:
+    """Reseal custody; semantic rejection must precede financial identity."""
     settings = WriterSettings(
         compression=Compression.ZSTD,
         row_group_size=1024,
@@ -1915,31 +2245,6 @@ def _rehash_changed_snapshot(
         entry["byte_digest"] = hashlib.sha256(
             (root / resource).read_bytes()
         ).hexdigest()
-    resources = {
-        entry["path"]: json.loads((root / entry["path"]).read_bytes())
-        for entry in [manifest["configuration"], *manifest["registries"]]
-    }
-    financial = {
-        "entities": [
-            [row["entity_id"], row["as_of"]] for row in snapshot.tables["build"]
-        ],
-        "schemas": {
-            name.removesuffix(".json"): json.loads((root / name).read_bytes())
-            for name in sorted(approved_schemas())
-        },
-        "tables": [
-            {"name": row["name"], "logical_digest": row["logical_digest"]}
-            for row in manifest["tables"]
-        ],
-        "resources": resources,
-        **{
-            name: manifest[name]
-            for name in ("effective_declarations", "derivations", "checks")
-        },
-    }
-    manifest["logical_content_digest"] = hashlib.sha256(
-        canonical_bytes(financial)
-    ).hexdigest()
     manifest_bytes = canonical_bytes(manifest)
     (root / "manifest.json").write_bytes(manifest_bytes)
     manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
@@ -1978,7 +2283,7 @@ def test_reversed_source_ordinals_fail_after_snapshot_is_mechanically_rehashed(
             row for row in observations if row["observation_id"] == case.aliases[alias]
         )
         row["decimal_value_coefficient"] = replacement
-    mutated_digest = _rehash_changed_snapshot(
+    mutated_digest = _rehash_mechanical_checksums(
         artifact_root, snapshot, table="observations"
     )
     with pytest.raises(
@@ -2005,27 +2310,24 @@ def test_independent_snapshot_rejects_overlapping_source_authority_after_rehash(
     configuration = json.loads(configuration_path.read_bytes())
 
     def authority(source: str, start: str, end: str) -> Row:
-        identity = case.aliases["source:" + source]
         return {
-            "entity_id": snapshot.tables["build"][0]["entity_id"],
-            "scope": {"table": "accounts", "key": [case.aliases["A"]]},
+            "account_id": case.aliases["A"],
+            "source_scope_id": source,
             "period_start": start,
             "period_end": end,
             "fact_kind": "movement",
             "coverage_basis_id": "settled-units",
-            "authoritative_sources": [{"table": "source_records", "key": [identity]}],
             "mode": "confirming",
-            "evidence": [{"kind": "source_record", "id": identity}],
         }
 
     configuration["source_authority"] = [
         authority("credit", "2026-01-01", "2026-01-15"),
-        authority("debit", "2026-01-15", "2026-01-31"),
+        authority("debit", "2026-01-14", "2026-01-31"),
     ]
     configuration_path.write_bytes(
         canonical_bytes(configuration, integer_strings=False)
     )
-    mutated_digest = _rehash_changed_snapshot(
+    mutated_digest = _rehash_mechanical_checksums(
         artifact_root, snapshot, resource="configuration.json"
     )
     with pytest.raises(ReaderError, match="overlapping source authority"):
@@ -2038,7 +2340,12 @@ def test_independent_snapshot_rejects_overlapping_source_authority_after_rehash(
 
 def test_canonical_logical_digest_preserves_types_scales_order_and_duplicates() -> None:
     columns = [
-        {"name": "amount_coefficient", "kind": "string", "nullable": False},
+        {
+            "name": "amount_coefficient",
+            "kind": "string",
+            "nullable": False,
+            "text_semantics": "identifier",
+        },
         {"name": "amount_scale", "kind": "integer", "nullable": False},
         {"name": "amount_source_scale", "kind": "integer", "nullable": True},
     ]
@@ -2055,3 +2362,248 @@ def test_canonical_logical_digest_preserves_types_scales_order_and_duplicates() 
     )
     with pytest.raises(ReaderError, match="floating-point"):
         canonical_bytes({"amount": 0.1})
+
+
+@pytest.mark.parametrize(
+    ("text", "row_bytes", "row_digest", "guard_digest"),
+    [
+        (
+            "  Caf\u00e9\n  ",
+            b'["  Caf\xc3\xa9\\n  "]\n',
+            "65d3315a4cb988eb5333c3582674a0ce330bc69485edcb8f8b694b88788923fb",
+            "f02d77aae6352be167dc3b9fb730dd810600995d142c36e32ad8f5c7a4889632",
+        ),
+        (
+            "  Cafe\u0301\n  ",
+            b'["  Cafe\xcc\x81\\n  "]\n',
+            "6fec5046f0840affa01df4abbe7798609e4282fe81bd52a9c6c330b142df8181",
+            "61d0a9308b4a226973a53be956b9a718c3981e0969607d541cd94e67eb22dc3c",
+        ),
+    ],
+)
+def test_exact_text_has_literal_canonical_row_and_guard_vectors(
+    text: str, row_bytes: bytes, row_digest: str, guard_digest: str
+) -> None:
+    columns = [
+        {
+            "name": "description_as_stated",
+            "kind": "string",
+            "nullable": False,
+            "text_semantics": "descriptive",
+        }
+    ]
+    assert canonical_bytes([text]) == row_bytes
+    assert (
+        logical_table_digest(columns, [{"description_as_stated": text}], version=1)
+        == row_digest
+    )
+    # Guard framing does not acquire the catalog-only column annotation.
+    guard_header = {
+        "schema_version": 1,
+        "columns": [
+            {"name": "description_as_stated", "kind": "string", "nullable": False}
+        ],
+    }
+    assert canonical_bytes(guard_header) == (
+        b'{"columns":[{"kind":"string","name":"description_as_stated",'
+        b'"nullable":false}],"schema_version":"1"}\n'
+    )
+    assert hashlib.sha256(canonical_bytes(guard_header) + row_bytes).hexdigest() == (
+        guard_digest
+    )
+    assert (
+        _source_key_event_id(
+            "entity", ["feed", "account-\u00e9", "FITID", "007"], "movement"
+        )
+        == "a630143025f422bf7de5c922f5118f450805f122f532df1bcc50deacb8c70d3e"
+    )
+    tables = source_key_support_tables()
+    tables["transactions"][0]["description_as_stated"] = text
+    _validate_event_support(tables)
+    assert tables["transactions"][0]["txn_id"] == (
+        "a630143025f422bf7de5c922f5118f450805f122f532df1bcc50deacb8c70d3e"
+    )
+
+
+@pytest.mark.parametrize(
+    ("kind", "text", "error"),
+    [
+        ("string", "", "empty identifier"),
+        ("list", "e\u0301", "non-NFC identifier"),
+        ("string", "key\n", "control character"),
+        ("list", "\ud800", "invalid Unicode"),
+    ],
+)
+def test_identifier_columns_reject_without_repair(
+    kind: str, text: str, error: str
+) -> None:
+    column = {
+        "name": "key",
+        "kind": kind,
+        "nullable": False,
+        "text_semantics": "identifier",
+    }
+    value = [text] if kind == "list" else text
+    with pytest.raises(ReaderError, match=error):
+        _validate_cell(column, value)
+    assert value == ([text] if kind == "list" else text)
+
+
+@pytest.mark.parametrize("kind", ["string", "list"])
+def test_descriptive_columns_preserve_empty_and_control_text(kind: str) -> None:
+    column = {
+        "name": "text",
+        "kind": kind,
+        "nullable": False,
+        "text_semantics": "descriptive",
+    }
+    for text in ("", "  e\u0301\n\u0000\u0085\u200d  "):
+        value = [text] if kind == "list" else text
+        _validate_cell(column, value)
+        assert value == ([text] if kind == "list" else text)
+    with pytest.raises(ReaderError, match="invalid Unicode"):
+        _validate_cell(column, ["\udfff"] if kind == "list" else "\udfff")
+
+
+@pytest.mark.parametrize("semantics", [None, "text"])
+@pytest.mark.parametrize("empty", [False, True])
+def test_missing_or_invalid_text_semantics_is_never_defaulted(
+    semantics: object, *, empty: bool
+) -> None:
+    case = load_case("cash")
+    schema = tabular_schema()
+    table = next(table for table in schema["tables"] if table["name"] == "transactions")
+    column = next(
+        column
+        for column in table["columns"]
+        if column["name"] == "description_as_stated"
+    )
+    if semantics is None:
+        column.pop("text_semantics")
+    else:
+        column["text_semantics"] = semantics
+    if empty:
+        case.tables["transactions"] = []
+    with pytest.raises(ReaderError, match="missing or invalid text_semantics"):
+        validate_rows(case.tables, schema)
+
+
+def test_nontext_columns_reject_text_semantics() -> None:
+    with pytest.raises(ReaderError, match="nontext column"):
+        _validate_cell(
+            {
+                "name": "count",
+                "kind": "integer",
+                "nullable": False,
+                "text_semantics": "descriptive",
+            },
+            1,
+        )
+
+
+@pytest.mark.parametrize("key", ["", "e\u0301", "key\n", "\ud800"])
+def test_canonical_json_keys_are_identifiers_not_normalized(key: str) -> None:
+    document = {key: "value"}
+    with pytest.raises(ReaderError):
+        canonical_bytes(document)
+    assert tuple(document) == (key,)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"text":"\xff"}',
+        b'{"text":"\xed\xa0\x80"}',
+        b'{"text":"\\ud800"}',
+        b'{"text":"\\udfff"}',
+    ],
+)
+def test_json_rejects_invalid_utf8_and_surrogates(payload: bytes) -> None:
+    with pytest.raises(ReaderError, match=r"invalid UTF-8|invalid Unicode"):
+        _json(payload)
+
+
+def test_retained_json_permits_descriptions_without_relaxing_reference_keys() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "format": "identifier"},
+            "description": {"type": "string", "text_semantics": "descriptive"},
+        },
+        "required": ["id", "description"],
+        "additionalProperties": False,
+    }
+    description = "  Cafe\u0301\n\u0000  "
+    validate_json({"id": "  authored-key  ", "description": description}, schema)
+    assert canonical_bytes({"description": description}) == (
+        b'{"description":"  Cafe\xcc\x81\\n\\u0000  "}\n'
+    )
+    for identifier in ("", "e\u0301", "key\n", "\ud800"):
+        with pytest.raises(ReaderError):
+            validate_json({"id": identifier, "description": description}, schema)
+
+
+def test_exact_text_snapshot_retains_bytes_and_independent_financial_answers(
+    artifact_root: Path,
+) -> None:
+    digest = _snapshot(artifact_root, case_id="exact-text")
+    snapshot = read_snapshot(
+        artifact_root,
+        descriptor_digest=digest,
+        expected_schema_digests=approved_schemas(),
+    )
+    production = read_production_snapshot(artifact_root, digest)
+    assert production.manifest["logical_content_digest"] == snapshot.financial_digest
+    case = load_case("exact-text")
+    debit = next(
+        row
+        for row in snapshot.tables["transactions"]
+        if row["txn_id"] == case.aliases["debit"]
+    )
+    for field, expected in (
+        ("description_as_stated", b"  Cafe\xcc\x81\nTwo notebooks\x00  "),
+        ("payee", b"  Cafe\xcc\x81\nShop  "),
+        ("narration", b"\tAme\xcc\x81lie\npaid\xc2\x85  "),
+    ):
+        assert debit[field].encode("utf-8") == expected
+    assert [value.encode("utf-8") for value in debit["tags"]] == [
+        b"",
+        b"  e\xcc\x81\n",
+        b"\xc3\xa9",
+        b"\xe2\x80\x8d",
+    ]
+    account = next(
+        row
+        for row in snapshot.tables["accounts"]
+        if row["account_id"] == case.aliases["A"]
+    )
+    assert (
+        account["institution"].encode("utf-8") == b"  Cafe\xcc\x81\nInstitution\x00  "
+    )
+    declaration = next(
+        row
+        for row in snapshot.tables["declarations"]
+        if row["declaration_id"] == account["declaration_id"]
+    )
+    assert _json(declaration["payload_json"].encode())["institution"].encode() == (
+        b"  Cafe\xcc\x81\nInstitution\x00  "
+    )
+    entity = snapshot.tables["build"][0]["entity_id"]
+    result = replay_rows(snapshot.tables, entity=entity)
+    assert result.quantity_positions[(entity, case.aliases["cash-A"])] == 110
+    assert case.expected_answers["cash_flow"] == {
+        "external_credit": "20",
+        "expense": "10",
+    }
+    for category, expected in (("income", -20), ("expense", 10)):
+        assert (
+            sum(
+                Fraction(int(row["amount_coefficient"]), 10 ** row["amount_scale"])
+                for row in snapshot.tables["postings"]
+                if row["category_id"] == case.aliases[category]
+            )
+            == expected
+        )
+    _assert_snapshot_oracles(case, snapshot.tables, result, entity=entity)
+    baseline = load_case("keyed-overlap")
+    assert case.aliases["debit"] == baseline.aliases["debit"]

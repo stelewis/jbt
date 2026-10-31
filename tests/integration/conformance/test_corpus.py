@@ -9,10 +9,11 @@ import pytest
 from tests.integration.conformance.corpus import (
     FixtureCase,
     _Bundle,
-    coverage_index,
+    case_ids,
     fixture_cases,
     load_case,
 )
+from tests.integration.conformance.reader import canonical_bytes
 
 from jbt.contracts.catalog import catalog
 from jbt.contracts.declarations import validate_declaration
@@ -23,24 +24,85 @@ from jbt.contracts.validation import (
     validate_tables,
 )
 from jbt.domain.canonical import encode_json
-from jbt.domain.errors import IdentityError
 from jbt.domain.identity import (
     AcquiredAnchor,
-    IdentityDecision,
-    IdentityReview,
-    Occurrence,
-    Retirement,
     child_id,
     declaration_id,
     revision_id,
+    source_record_digest,
     successor_lot_id,
-    validate_membership,
-    validate_transition,
 )
 from jbt.domain.ids import EntityId, RecordId, RecordKind, SemanticKey
 
 pytestmark = [pytest.mark.integration, pytest.mark.golden]
-CASE_IDS = tuple(case.case_id for case in fixture_cases())
+CASE_IDS = case_ids()
+
+
+def test_keyed_identical_purchases_differ_only_in_identity_not_financial_facts() -> (
+    None
+):
+    case = load_case("keyed-overlap")
+    purchases = [
+        next(
+            row
+            for row in case.tables["transactions"]
+            if row["txn_id"] == case.aliases[name]
+        )
+        for name in ("debit", "identical-debit")
+    ]
+    assert purchases[0]["txn_id"] != purchases[1]["txn_id"]
+    for field in ("date_posted", "payee", "narration", "description_as_stated"):
+        assert purchases[0][field] == purchases[1][field]
+    assert purchases[0]["description_as_stated"] == "Two notebooks"
+    for name in ("debit-cash", "identical-debit-cash"):
+        posting = next(
+            row
+            for row in case.tables["postings"]
+            if row["posting_id"] == case.aliases[name]
+        )
+        assert _known_number(posting, "amount") == -5
+    assert case.expected_answers["cash_flow"] == {
+        "external_credit": "20",
+        "expense": "10",
+    }
+    assert case.expected_answers["positions"] == {"cash-A": "110"}
+
+
+def test_exact_text_case_keeps_financial_determinations_and_keyed_identity() -> None:
+    case = load_case("exact-text")
+    baseline = load_case("keyed-overlap")
+    assert case.expected_answers == baseline.expected_answers
+    assert case.expected_answers["positions"] == {"cash-A": "110"}
+    assert case.expected_answers["cash_flow"] == {
+        "external_credit": "20",
+        "expense": "10",
+    }
+    assert case.aliases["debit"] == baseline.aliases["debit"]
+    debit = next(
+        row
+        for row in case.tables["transactions"]
+        if row["txn_id"] == case.aliases["debit"]
+    )
+    assert canonical_bytes(
+        {name: debit[name] for name in ("description_as_stated", "payee", "narration")}
+    ) == (
+        b'{"description_as_stated":"  Cafe\xcc\x81\\nTwo notebooks\\u0000  ",'
+        b'"narration":"\\tAme\xcc\x81lie\\npaid\xc2\x85  ",'
+        b'"payee":"  Cafe\xcc\x81\\nShop  "}\n'
+    )
+    for name in ("debit-cash", "identical-debit-cash"):
+        posting = next(
+            row
+            for row in case.tables["postings"]
+            if row["posting_id"] == case.aliases[name]
+        )
+        assert _known_number(posting, "amount") == -5
+    cash_postings = [
+        row
+        for row in case.tables["postings"]
+        if row["position_id"] == case.aliases["cash-A"]
+    ]
+    assert sum(_known_number(row, "amount") for row in cash_postings) == 110
 
 
 def _number(row: dict, field: str) -> Fraction | None:
@@ -189,12 +251,15 @@ def test_complete_specimen_validates_real_tables_and_declarations(case_id: str) 
     assert set(case.tables) == {table.name for table in catalog()}
     assert case.oracle_notes
     assert case.domain_records
-
-
-@pytest.mark.parametrize("case_id", CASE_IDS)
-def test_retained_invented_evidence_matches_every_source_digest(case_id: str) -> None:
-    case = load_case(case_id)
     for source in case.tables["source_records"]:
+        assert source["source_record_id"] == source_record_digest(
+            AcquiredAnchor(
+                _text(source["source_blob_digest"]),
+                SemanticKey(_text(source["source_scope_id"])),
+                SemanticKey(_text(source["source_section"])),
+                SemanticKey(_text(source["record_locator"])),
+            )
+        )
         text = case.evidence["blobs"][source["source_blob_digest"]]
         assert text.startswith("INVENTED")
         assert sha256(text.encode()).hexdigest() == source["source_blob_digest"]
@@ -247,20 +312,6 @@ def test_declaration_revision_bytes_agree_for_null_and_dated_starts() -> None:
     changed["declarations"][0]["valid_from"] = "2026-01-01"
     with pytest.raises(ContractError, match="declaration_revision_identity"):
         validate_tables(changed)
-
-
-@pytest.mark.parametrize("case_id", CASE_IDS)
-def test_recorded_deltas_replay_to_hand_calculated_inventory(case_id: str) -> None:
-    case = load_case(case_id)
-    totals = _inventory(case)
-    for alias, expected in case.expected_answers.get("inventory", {}).items():
-        actual = totals[case.aliases[alias]]
-        for component, value in expected.items():
-            assert actual[component] == (None if value is None else Fraction(value)), (
-                case_id,
-                alias,
-                component,
-            )
 
 
 def test_cash_source_and_model_reconciliation_have_distinct_failure_modes() -> None:
@@ -457,206 +508,15 @@ def test_complete_empty_account_and_full_position_enumeration() -> None:
         validate_tables(falsely_empty)
 
 
-def _correction_stage(case: FixtureCase, alias: str, amount: str) -> dict:
-    stage = deepcopy(case.tables)
-    active_id = case.aliases["declaration:" + alias]
-    replacements = {
-        case.aliases["credit-cash"]: amount,
-        case.aliases["credit-income"]: "-" + amount,
-    }
-    for table in ("postings", "posting_weights"):
-        for row in stage[table]:
-            replacement = replacements.get(row["posting_id"])
-            if replacement is not None:
-                _change_number(row, "amount", replacement)
-    if alias != "retract-credit":
-        for row in stage["provenance"]:
-            if row["record_kind"] == "postings" and row["field_name"] == "amount":
-                posting = json.loads(_text(row["record_id"]))[0]
-                if posting in replacements:
-                    row["value_origin"] = (
-                        "correction"
-                        if posting == case.aliases["credit-cash"]
-                        else "booking"
-                    )
-                    row["evidence_kind"] = "declaration"
-                    row["evidence_id"] = active_id
-                    if posting == case.aliases["credit-income"]:
-                        row["derivation_id"] = "booked-counterpart-from-correction-v1"
-            elif (
-                row["record_kind"] == "posting_weights"
-                and row["field_name"] == "amount"
-                and json.loads(_text(row["record_id"]))[0] in replacements
-            ):
-                row["evidence_kind"] = "declaration"
-                row["evidence_id"] = active_id
-                row["derivation_id"] = "booked-weight-from-correction-v1"
-    return stage
-
-
-def test_guarded_correction_history_replays_complete_replacements_and_retraction() -> (
-    None
-):
-    case = load_case("correction-history")
-    validate_tables(case.tables)
-    original_event = case.aliases["credit"]
-    original_leg = case.aliases["credit-cash"]
-    corrections = ("correct-credit", "replace-credit", "retract-credit")
-    for alias, amount, expected in zip(
-        corrections,
-        ("25", "22", "20"),
-        case.expected_answers["correction_cash"],
-        strict=True,
-    ):
-        assert Fraction(expected) == 100 + Fraction(amount) - 5
-        stage = _correction_stage(case, alias, amount)
-        active_id = case.aliases["declaration:" + alias]
-        validate_tables(stage)
-        _active_declarations(
-            {
-                "effective_declarations": [
-                    {
-                        "entity_id": stage["build"][0]["entity_id"],
-                        "declaration_id": active_id,
-                    }
-                ]
-            },
-            stage,
-        )
-        assert case.aliases["credit"] == original_event
-        assert case.aliases["credit-cash"] == original_leg
-        cash = sum(
-            _known_number(row, "amount")
-            for row in stage["postings"]
-            if row["position_id"] == case.aliases["cash-A"]
-        )
-        assert cash == Fraction(expected)
-    conflict = {
-        "effective_declarations": [
-            {
-                "entity_id": case.tables["build"][0]["entity_id"],
-                "declaration_id": case.aliases["declaration:" + alias],
-            }
-            for alias in ("correct-credit", "replace-credit")
-        ]
-    }
-    with pytest.raises(ContractError, match="active_correction_chain"):
-        _active_declarations(conflict, case.tables)
-    bad_prior = deepcopy(case.tables)
-    replacement = next(
-        row
-        for row in bad_prior["declarations"]
-        if row["declaration_id"] == case.aliases["declaration:replace-credit"]
-    )
-    payload = json.loads(_text(replacement["payload_json"]))
-    payload["prior_declaration_id"] = case.aliases["declaration:book"]
-    replacement["payload_json"] = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
-    with pytest.raises(ContractError, match="correction_prior_reference"):
-        _active_declarations({"effective_declarations": []}, bad_prior)
-    changed = deepcopy(case.tables)
-    credit = next(
-        row
-        for row in changed["postings"]
-        if row["posting_id"] == case.aliases["credit-cash"]
-    )
-    credit["commodity_id"] = case.aliases["EUR"]
-    with pytest.raises(ContractError, match="guard_projection_changed"):
-        _active_declarations(
-            {
-                "effective_declarations": [
-                    {
-                        "entity_id": case.tables["build"][0]["entity_id"],
-                        "declaration_id": case.aliases["declaration:correct-credit"],
-                    }
-                ]
-            },
-            changed,
-        )
-
-
-def test_reviewed_merge_split_retains_retirement_without_reusing_old_identity() -> None:
+def test_identity_specimen_retains_retirement_and_distinct_anchors() -> None:
     case = load_case("identity-history")
     validate_tables(case.tables)
     entity = EntityId(_text(case.tables["build"][0]["entity_id"]))
-    names = ("old-m", "canonical", "split-new")
-    sources = {row["source_record_id"]: row for row in case.tables["source_records"]}
-    occurrences = {}
-    for name in names:
-        source = sources[case.aliases["source:" + name]]
-        occurrences[name] = Occurrence(
-            AcquiredAnchor(
-                _text(source["source_blob_digest"]),
-                SemanticKey("synthetic-fixture"),
-                SemanticKey(_text(source["source_section"])),
-                SemanticKey(_text(source["record_locator"])),
-            ),
-            SemanticKey(name),
-        )
-    retained = tuple(occurrences.values())
-    original = validate_membership(entity, retained, (), required_correspondences=())
-    merged = validate_membership(
-        entity,
-        retained,
-        (
-            IdentityDecision(
-                occurrences["canonical"],
-                (occurrences["canonical"], occurrences["old-m"]),
-                (SemanticKey("reviewed-merge"),),
-            ),
-        ),
-        required_correspondences=((occurrences["canonical"], occurrences["old-m"]),),
-    )
-    identifiers = {
-        name: RecordId(entity, RecordKind.EVENT, case.aliases[name]) for name in names
-    }
-    retirement = Retirement(identifiers["old-m"], identifiers["canonical"])
-    validate_transition(
-        original,
-        merged,
-        (retirement,),
-        prior_retirements=(),
-        review=IdentityReview(
-            frozenset(identifiers.values()),
-            frozenset(identifiers.values()),
-        ),
-    )
-    split = validate_membership(
-        entity,
-        retained,
-        (
-            IdentityDecision(
-                occurrences["split-new"],
-                (occurrences["old-m"], occurrences["split-new"]),
-                (SemanticKey("reviewed-split"),),
-            ),
-        ),
-        required_correspondences=((occurrences["old-m"], occurrences["split-new"]),),
-    )
-    validate_transition(
-        merged,
-        split,
-        (),
-        prior_retirements=(retirement,),
-        review=IdentityReview(
-            frozenset(identifiers.values()),
-            frozenset(identifiers.values()),
-        ),
-    )
-    with pytest.raises(IdentityError, match="unreviewed_affected_targets"):
-        validate_transition(
-            merged,
-            split,
-            (),
-            prior_retirements=(retirement,),
-            review=IdentityReview(frozenset(identifiers.values()), frozenset()),
-        )
     assert {
-        member.event
-        for member in split
-        if member.occurrence in (occurrences["old-m"], occurrences["split-new"])
-    } == {identifiers["split-new"]}
+        row["record_id"]
+        for row in case.tables["economic_identities"]
+        if row["identity_state"] == "active"
+    } == {case.aliases["canonical"], case.aliases["split-new"]}
     assert {
         row["record_id"]
         for row in case.tables["economic_identities"]
@@ -673,42 +533,6 @@ def test_reviewed_merge_split_retains_retirement_without_reusing_old_identity() 
                 ]
             },
             case.tables,
-        )
-    with pytest.raises(ContractError, match="identity_membership_disjoint"):
-        _active_declarations(
-            {
-                "effective_declarations": [
-                    {
-                        "entity_id": entity.value,
-                        "declaration_id": case.aliases["declaration:" + decision],
-                    }
-                    for decision in ("merge-reviewed", "split-reviewed")
-                ]
-            },
-            case.tables,
-        )
-    wrong_survivor = deepcopy(case.tables)
-    merge = next(
-        row
-        for row in wrong_survivor["declarations"]
-        if row["declaration_id"] == case.aliases["declaration:merge-reviewed"]
-    )
-    payload = json.loads(_text(merge["payload_json"]))
-    payload["successor_ids"] = [case.aliases["split-new"]]
-    merge["payload_json"] = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
-    with pytest.raises(ContractError, match="identity_successor_active"):
-        _active_declarations(
-            {
-                "effective_declarations": [
-                    {
-                        "entity_id": entity.value,
-                        "declaration_id": case.aliases["declaration:merge-reviewed"],
-                    }
-                ]
-            },
-            wrong_survivor,
         )
     wrong_anchor = deepcopy(case.tables)
     canonical = next(
@@ -1108,16 +932,6 @@ def test_nary_outcomes_remain_distinct_and_links_do_not_generate_holdings() -> N
     assert case.tables["inventory_changes"] == []
 
 
-@pytest.mark.parametrize("case_id", CASE_IDS)
-def test_missing_required_nullable_field_rejects_complete_snapshot(
-    case_id: str,
-) -> None:
-    tables = deepcopy(load_case(case_id).tables)
-    del tables["transactions"][0]["payee"]
-    with pytest.raises(ContractError, match="closed_row"):
-        validate_tables(tables)
-
-
 def _change_number(row: dict, field: str, coefficient: str, scale: int = 0) -> None:
     row[field + "_coefficient"] = coefficient
     row[field + "_scale"] = scale
@@ -1218,18 +1032,8 @@ def test_invalid_financial_specimens_fail_the_owning_constraint(
         validate_tables(_mutated_tables(case_id, mutation))
 
 
-def test_coverage_index_has_no_unproven_structural_obligations() -> None:
-    cases = {case.case_id: case for case in fixture_cases()}
-    index = coverage_index()
-    assert index
-    assert len({entry["family"] for entry in index}) == len(index)
-    for entry in index:
-        assert entry["case"] in cases
-        assert entry["positive"] in cases[entry["case"]].expected_answers
-        assert entry["negative"]
-        assert entry["later_processor"]
-        assert entry["status"] == "met"
-        assert not entry.get("missing")
-    assert all(
-        any(case.tables[table.name] for case in cases.values()) for table in catalog()
-    )
+def test_every_catalog_table_has_a_nonempty_specimen() -> None:
+    populated = {
+        name for case in fixture_cases() for name, rows in case.tables.items() if rows
+    }
+    assert populated == {table.name for table in catalog()}

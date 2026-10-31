@@ -174,7 +174,7 @@
             "member_kind": "posting",
             "member_id": "@new-created",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           },
           {
             "link_id": "@remortgage-link",
@@ -182,7 +182,7 @@
             "member_kind": "posting",
             "member_id": "@old-extinguished",
             "link_kind": "transfer",
-            "origin": "derived"
+            "origin": "correction"
           }
         ]
       }

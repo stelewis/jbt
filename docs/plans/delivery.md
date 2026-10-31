@@ -7,24 +7,32 @@ date_created: 2026-08-19
 
 Implement the full system, building on the [implemented architecture](../developer/architecture.md). The [target architecture](../design/target-architecture.md) and [analytical contract](../design/analysis-boundary.md) define the full system; [acceptance cases](../design/acceptance.md) define expected behavior.
 
+The [deferred-scope register](../developer/deferred-scope.md) records unsupported capabilities and the evidence needed to reconsider them.
+
 ## Design now, implement in stages
 
-Design shared identities and invariants against the intended capability set, then implement processors in slices.
+Design shared identities and invariants against the intended capability set, then implement processors in slices. Prove the few shared distinctions that could invalidate the next consumer; implement detailed representations when that consumer needs them. Do not implement future review views, body variants, codecs, or exhaustive validation matrices in advance.
 
 ## Gate for each processor slice
 
-Before implementing a processor, extend the conformance fixtures with its positive, negative, and boundary cases and resolve the expected transformations under the [contract-first workflow](../developer/standards/tests.md#contract-first-slices). If evidence exposes a missing fact or flawed representation, revise the owning contract and independent expectations together rather than preserving it through a shim.
+Before implementing a processor, select small conformance examples covering its meaningful positive, negative, and boundary cases and resolve the expected transformations under the [contract-first workflow](../developer/standards/tests.md#contract-first-slices). Reuse existing evidence rather than multiplying equivalent scenarios. If evidence exposes a missing fact or flawed representation, revise the owning contract and independent expectations together rather than preserving it through a shim.
 
-A slice exits when its processor produces those expected results through the real model and configured outputs. Reuse conformance fixtures as end-to-end expectations, not self-generated snapshots. Representation proof does not certify an unimplemented processor; unsupported families must fail explicitly.
+A slice exits when its processor produces those expected results, with representative integration proof through the affected boundaries. Test transformations directly; do not publish or replay every fixture merely to assert financial meaning. Reuse conformance fixtures as independently calculated expectations, not self-generated snapshots. Representation proof does not certify an unimplemented processor; unsupported families must fail explicitly.
 
 ## 2. Complete ingestion and the correction workflow
 
-- Resolve overlapping-source authority, revisions, pending/posted states, multi-account files, account and instrument aliases, account and event lifecycle, coverage, and authored records.
+**Complete.** [Step 3: inventory and corporate actions](#3-implement-inventory-and-corporate-actions) is the next implementation increment; interpreter qualification remains the separate release-readiness gate below.
+
+- Resolve overlapping-source authority, revisions, pending/posted states, multi-account files, bank and card statements, account and instrument aliases, account and event lifecycle, coverage, and authored records.
 - Extend rules beyond category assignment, with complete evaluation and typed field policies. Add the guarded correction journal, rendered-ID correction workflow, and replayable lineage.
-- Implement internal cash-transfer and evidence links. Extend summary review status and uncategorized-work reporting to these workflows.
-- Add exact decimal/time boundary cases and bound each importer. Exercise a synthetic external importer in a provisioned environment; require unique entry-point resolution, conformance, and supported installed producer provenance before exposing the interface publicly.
+- Implement internal cash-transfer (including card payment) and evidence links. Extend summary review status and uncategorized-work reporting to these workflows.
+- Add exact decimal/time boundary cases and bound each importer. Exercise a synthetic external importer in a provisioned environment; require unique entry-point resolution, conformance, supported installed interpreter provenance, and strict version-pinned replay.
 
 **Exit:** repeated evidence does not duplicate events; distinct identical purchases remain distinct; revised sources and changed correction targets produce the required review. Source and model checks run independently. Coverage uses the recorded horizon. Users can fix an output through its ID without editing generated files.
+
+### Interpreter qualification: separate release-readiness gate
+
+Keep the importer interface experimental until upgrades can be qualified against a pinned generation. Implement this workflow after the ingestion model and correction workflow supply real comparison outputs, not as a prerequisite to Step 2. Compare the same retained financial inputs under the candidate interpreter set, report financial and review changes, and retain explicit acceptance. Missing or incomparable evidence is never an empty successful diff, and acceptance never waives financial invariants or missing recovery inputs. Provenance and strict replay establish what ran; they do not approve a reinterpretation of reviewed history.
 
 ## 3. Implement inventory and corporate actions
 
@@ -61,8 +69,6 @@ Add further source formats, OCR, the deferred hledger sink and beangulp compatib
 **Exit:** each released capability passes its acceptance cases, and all public fixtures remain synthetic. Packaging changes preserve artifact contracts and independent records.
 
 ## Verification throughout
-
-For every stage, run the relevant repository quality gates plus schema, independent-reader, ledger validation, and clean-replay tests. Expected financial results are calculated independently; updating a golden file requires explaining the semantic change.
 
 Exercise restoration, corrupt/missing inputs, concurrent writers, interrupted publication, and producer changes throughout development. Before a release, restore the synthetic multi-year corpus using only its recovery set and measure rebuild time and peak memory. Performance improvements preserve the same financial results and complete-snapshot publication.
 

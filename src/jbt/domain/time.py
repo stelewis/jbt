@@ -17,6 +17,7 @@ _MINUTES_PER_HOUR = 60
 _HOURS_PER_DAY = 24
 _SECONDS_PER_DAY = 86400
 _SECOND_COMPONENTS = 3
+_SOURCE_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z", re.ASCII)
 
 
 class Precision(StrEnum):
@@ -26,6 +27,120 @@ class Precision(StrEnum):
     MINUTE = "minute"
     SECOND = "second"
     FRACTIONAL_SECOND = "fractional_second"
+
+
+class TimeRole(StrEnum):
+    """The fact whose exact civil time is observed."""
+
+    AUTHORIZED = "authorized"
+    TRADED = "traded"
+    POSTED = "posted"
+    SETTLED = "settled"
+    VALUE = "value"
+    OCCURRED = "occurred"
+    INITIATED = "initiated"
+    PENDING_AS_OF = "pending_as_of"
+    HOLD_EXPIRES = "hold_expires"
+
+
+def is_midnight(local: str | None) -> bool:
+    """Recognize midnight without discarding the clock's stated precision."""
+    clock, _, fraction = (local or "").partition(".")
+    return clock in {"00:00", "00:00:00"} and not fraction.strip("0")
+
+
+def validate_source_date(value: str) -> None:
+    """Validate a proleptic Gregorian source date, including year zero."""
+    if not isinstance(value, str) or _SOURCE_DATE.fullmatch(value) is None:
+        raise TemporalError(constraint="source_date_required", location="source_time")
+    year, month, day = (int(part) for part in value.split("-"))
+    leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    month_days = (31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    if not 1 <= month <= len(month_days) or not 1 <= day <= month_days[month - 1]:
+        raise TemporalError(constraint="source_calendar_range", location="source_time")
+
+
+def _validate_local_time(
+    local: str | None,
+    precision: Precision,
+    fraction_digits: int | None,
+    *,
+    last_second: int,
+) -> None:
+    if not isinstance(local, str):
+        raise TemporalError(constraint="local_time_required", location="time")
+    patterns = {
+        Precision.MINUTE: _MINUTE,
+        Precision.SECOND: _SECOND,
+        Precision.FRACTIONAL_SECOND: _FRACTION,
+    }
+    match = patterns[precision].fullmatch(local)
+    if match is None:
+        raise TemporalError(constraint="time_precision_mismatch", location="time")
+    parts = match.groups()
+    hour, minute = int(parts[0]), int(parts[1])
+    second = int(parts[2]) if len(parts) >= _SECOND_COMPONENTS else 0
+    if hour >= _HOURS_PER_DAY or minute >= _MINUTES_PER_HOUR or second > last_second:
+        raise TemporalError(constraint="civil_time_range", location="time")
+    if precision == Precision.FRACTIONAL_SECOND:
+        if type(fraction_digits) is not int or fraction_digits != len(parts[3]):
+            raise TemporalError(
+                constraint="fraction_precision_mismatch", location="time"
+            )
+    elif fraction_digits is not None:
+        raise TemporalError(constraint="unexpected_fraction_digits", location="time")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceTimeObservation:
+    """Exact source civil evidence; not a resolved model time or instant.
+
+    A lexical leap second does not establish a valid UTC leap event.
+    Offset seconds preserve fractional-hour offsets without rounding.
+    """
+
+    date: str
+    local: str | None
+    offset_seconds: int | None
+    zone: str | None
+    precision: Precision
+    fraction_digits: int | None
+
+    def __post_init__(self) -> None:
+        """Validate source ranges without Python calendar/POSIX conversion."""
+        validate_source_date(self.date)
+        if not isinstance(self.precision, Precision):
+            raise TemporalError(
+                constraint="date_and_precision_required", location="source_time"
+            )
+        if self.zone is not None:
+            validate_key(self.zone, "source_time.zone")
+        if self.offset_seconds is not None and (
+            type(self.offset_seconds) is not int
+            or not -_SECONDS_PER_DAY < self.offset_seconds < _SECONDS_PER_DAY
+        ):
+            raise TemporalError(
+                constraint="offset_seconds_range", location="source_time"
+            )
+        if self.precision == Precision.DATE:
+            if any(
+                item is not None
+                for item in (
+                    self.local,
+                    self.offset_seconds,
+                    self.fraction_digits,
+                )
+            ):
+                raise TemporalError(
+                    constraint="date_only_fields", location="source_time"
+                )
+            return
+        _validate_local_time(
+            self.local,
+            self.precision,
+            self.fraction_digits,
+            last_second=60,
+        )
 
 
 class DateMode(StrEnum):
@@ -101,36 +216,12 @@ class TimeObservation:
         self._validate_local()
 
     def _validate_local(self) -> None:
-        if not isinstance(self.local, str):
-            raise TemporalError(constraint="local_time_required", location="time")
-        patterns = {
-            Precision.MINUTE: _MINUTE,
-            Precision.SECOND: _SECOND,
-            Precision.FRACTIONAL_SECOND: _FRACTION,
-        }
-        match = patterns[self.precision].fullmatch(self.local)
-        if match is None:
-            raise TemporalError(constraint="time_precision_mismatch", location="time")
-        parts = match.groups()
-        hour, minute = int(parts[0]), int(parts[1])
-        second = int(parts[2]) if len(parts) >= _SECOND_COMPONENTS else 0
-        if (
-            hour >= _HOURS_PER_DAY
-            or minute >= _MINUTES_PER_HOUR
-            or second >= _SECONDS_PER_MINUTE
-        ):
-            raise TemporalError(constraint="civil_time_range", location="time")
-        if self.precision == Precision.FRACTIONAL_SECOND:
-            if type(self.fraction_digits) is not int or self.fraction_digits != len(
-                parts[3]
-            ):
-                raise TemporalError(
-                    constraint="fraction_precision_mismatch", location="time"
-                )
-        elif self.fraction_digits is not None:
-            raise TemporalError(
-                constraint="unexpected_fraction_digits", location="time"
-            )
+        _validate_local_time(
+            self.local,
+            self.precision,
+            self.fraction_digits,
+            last_second=59,
+        )
 
 
 class ZoneDecision(StrEnum):
@@ -279,6 +370,84 @@ def resolve_instant(
         + second
     )
     return Instant(seconds, fraction if separator else None)
+
+
+def source_instant(
+    observation: SourceTimeObservation, *, offset_seconds: int
+) -> Instant:
+    """Resolve an ordinary source clock with an exact supplied offset."""
+    if observation.local is None:
+        raise TemporalError(constraint="date_only_has_no_instant", location="time")
+    if (
+        type(offset_seconds) is not int
+        or not -_SECONDS_PER_DAY < offset_seconds < _SECONDS_PER_DAY
+    ):
+        raise TemporalError(constraint="offset_seconds_range", location="time")
+    if (
+        observation.offset_seconds is not None
+        and observation.offset_seconds != offset_seconds
+    ):
+        raise TemporalError(constraint="zone_offset_disagreement", location="time")
+    try:
+        civil = date.fromisoformat(observation.date)
+    except ValueError as error:
+        raise TemporalError(
+            constraint="source_calendar_unsupported", location="time"
+        ) from error
+    clock, separator, fraction = observation.local.partition(".")
+    parts = tuple(int(part) for part in clock.split(":"))
+    hour, minute = parts[:2]
+    second = parts[2] if len(parts) >= _SECOND_COMPONENTS else 0
+    if second == _SECONDS_PER_MINUTE:
+        raise TemporalError(
+            constraint="source_leap_second_requires_rules", location="time"
+        )
+    return Instant(
+        (civil - date(1970, 1, 1)).days * _SECONDS_PER_DAY
+        + hour * 3600
+        + minute * 60
+        + second
+        - offset_seconds,
+        fraction if separator else None,
+    )
+
+
+def civil_time(
+    instant: Instant, *, offset_seconds: int, zone: str, precision: Precision
+) -> TimeObservation:
+    """Render an instant without rounding its fractional-second evidence.
+
+    Minute source precision expands to seconds only when required by a
+    historical second-resolution offset.
+    """
+    if (
+        type(offset_seconds) is not int
+        or not -_SECONDS_PER_DAY < offset_seconds < _SECONDS_PER_DAY
+    ):
+        raise TemporalError(constraint="offset_seconds_range", location="time")
+    if offset_seconds % 60:
+        raise TemporalError(constraint="model_offset_unsupported", location="time")
+    if precision == Precision.DATE:
+        raise TemporalError(constraint="date_only_has_no_instant", location="time")
+    days, seconds = divmod(instant.unix_seconds + offset_seconds, _SECONDS_PER_DAY)
+    civil = shifted_date(date(1970, 1, 1), days)
+    hour, seconds = divmod(seconds, 3600)
+    minute, second = divmod(seconds, 60)
+    if precision == Precision.MINUTE and second:
+        precision = Precision.SECOND
+    local = f"{hour:02}:{minute:02}"
+    if precision != Precision.MINUTE:
+        local += f":{second:02}"
+    if instant.fraction is not None:
+        local += f".{instant.fraction}"
+    return TimeObservation(
+        civil,
+        local,
+        offset_seconds // 60,
+        zone,
+        precision,
+        len(instant.fraction) if instant.fraction is not None else None,
+    )
 
 
 def validate_interval(start: date, end: date | None, *, inclusive: bool) -> None:

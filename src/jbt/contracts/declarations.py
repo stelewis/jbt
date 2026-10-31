@@ -2,7 +2,6 @@
 
 import json
 import re
-import unicodedata
 from datetime import date
 from fractions import Fraction
 from functools import lru_cache
@@ -10,8 +9,14 @@ from functools import lru_cache
 from jsonschema import ValidationError
 
 from jbt.contracts.catalog import tabular_schema
-from jbt.contracts.primitives import ContractError, require, validate_number
+from jbt.contracts.primitives import (
+    ContractError,
+    require,
+    validate_identifier,
+    validate_number,
+)
 from jbt.contracts.schemas import declaration_schema, validate_document
+from jbt.domain.rules import RuleField, RuleMode
 
 
 @lru_cache(maxsize=1)
@@ -22,19 +27,15 @@ def _validation_schema() -> dict:
 def field_registry() -> tuple[dict, ...]:
     """Publish explicit assignment permissions for every logical model field."""
     result = []
-    permitted_rules = {
-        "transactions.payee",
-        "transactions.narration",
-        "transactions.tags",
-        "transactions.review_state",
-        "postings.category_id",
-    }
-    corrections = {*permitted_rules, "transactions.event_state", "postings.amount"}
+    permitted_rules = set(RuleField)
+    corrections = {*permitted_rules, "transactions.event_state"}
     for table in tabular_schema()["tables"]:
         for name, kind in table["logical_fields"].items():
             qualified = f"{table['name']}.{name}"
-            if table["name"] in {"transactions", "postings"} and name.startswith(
-                "date_"
+            if (
+                table["name"] in {"transactions", "postings"}
+                and name.startswith("date_")
+                and not name.endswith("_mode")
             ):
                 corrections.add(qualified)
             result.append(
@@ -46,13 +47,9 @@ def field_registry() -> tuple[dict, ...]:
                     "units": "commodity"
                     if kind.removesuffix("?") == "decimal"
                     else "none",
-                    "rule_mode": (
-                        "union"
-                        if qualified == "transactions.tags"
-                        else "first"
-                        if qualified in permitted_rules
-                        else "prohibited"
-                    ),
+                    "rule_mode": RuleField(qualified).mode.value
+                    if qualified in permitted_rules
+                    else RuleMode.PROHIBITED.value,
                     "correction_allowed": qualified in corrections,
                 }
             )
@@ -64,15 +61,7 @@ def _exact(value: dict) -> Fraction:
 
 
 def _walk(value: object, location: str) -> None:
-    require(type(value) is not float, "json_float", location)
-    if isinstance(value, str):
-        require(unicodedata.normalize("NFC", value) == value, "text_nfc", location)
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError as error:
-            msg = "text_utf8"
-            raise ContractError(msg, location) from error
-    elif isinstance(value, list):
+    if isinstance(value, list):
         for item in value:
             _walk(item, location)
         if all(isinstance(item, str) for item in value) and not location.endswith(
@@ -80,14 +69,8 @@ def _walk(value: object, location: str) -> None:
         ):
             require(value == sorted(set(value)), "list_order_unique", location)
     elif isinstance(value, dict):
-        if set(value) == {"coefficient", "scale", "source_scale"}:
-            validate_number(value, location)
         for key, item in value.items():
             _walk(item, f"{location}.{key}")
-            if key.endswith(("_id", "_key")) and item is not None:
-                require(
-                    isinstance(item, str) and bool(item), "empty_identifier", location
-                )
 
 
 def _ordered(items: list, fields: tuple[str, ...], location: str) -> None:
@@ -95,23 +78,14 @@ def _ordered(items: list, fields: tuple[str, ...], location: str) -> None:
     require(keys == sorted(set(keys)), "child_order_unique", location)
 
 
-def _assignments(payload: dict) -> None:
+def _rule_assignments(payload: dict) -> None:
     registry = {row["field_name"]: row for row in field_registry()}
     tables = {t["name"]: t for t in tabular_schema()["tables"]}
     for assignment in payload["assignments"]:
         field = assignment["field"]
         require(field in registry, "assignment_field", payload["kind"])
         definition = registry[field]
-        if payload["kind"] == "rule":
-            require(definition["rule_mode"] != "prohibited", "rule_assignment", field)
-        else:
-            require(definition["correction_allowed"], "correction_assignment", field)
-            require(
-                payload["target"] is not None
-                and payload["target"]["table"] == definition["target_table"],
-                "assignment_target",
-                field,
-            )
+        require(definition["rule_mode"] != "prohibited", "rule_assignment", field)
         table_name, column_name = field.split(".", 1)
         column = next(
             (c for c in tables[table_name]["columns"] if c["name"] == column_name), None
@@ -145,6 +119,8 @@ def _assignments(payload: dict) -> None:
                     "assignment_value",
                     field,
                 )
+            if column and kind in {"string", "list"}:
+                _field_text(value, column, field)
             if kind == "date":
                 require(
                     re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is not None,
@@ -160,61 +136,140 @@ def _assignments(payload: dict) -> None:
                 require(value in column["enum"], "assignment_value", field)
 
 
-def _correction(payload: dict) -> None:
-    operation = payload["operation"]
-    assignment, selection = bool(payload["assignments"]), bool(payload["selection"])
-    if operation == "retract":
-        require(
-            payload["target"] is None
-            and not assignment
-            and not selection
-            and not payload["guards"]
-            and payload["prior_declaration_id"] is not None,
-            "correction_retract",
-            "correction",
-        )
+def _field_text(value: object, column: dict, location: str) -> None:
+    if value is None:
+        require(column["nullable"], "required_value", location)
         return
-    require(
-        payload["target"] is not None and bool(payload["guards"]),
-        "correction_guard_target",
-        "correction",
-    )
-    require(
-        (payload["prior_declaration_id"] is not None) == (operation == "supersede"),
-        "correction_prior",
-        "correction",
-    )
-    require(assignment != selection, "correction_replacement", "correction")
-    if operation != "supersede":
+    values = value if isinstance(value, list) else [value]
+    require(all(isinstance(item, str) for item in values), "field_text_value", location)
+    if column["text_semantics"] == "identifier":
+        for item in values:
+            validate_identifier(item, location)
+
+
+def rule_match_fields(observation_fields: tuple[dict, ...]) -> dict[str, dict]:
+    """Bind source operands to their manifest types, not inferred values."""
+    fields = {}
+    for table in tabular_schema()["tables"]:
+        for name, kind in table["logical_fields"].items():
+            column = next((c for c in table["columns"] if c["name"] == name), {})
+            fields[f"{table['name']}.{name}"] = {
+                "value_type": kind.removesuffix("?"),
+                "nullable": kind.endswith("?"),
+                "column": column,
+            }
+    for field in observation_fields:
+        require(field["field_name"] not in fields, "rule_field_collision", "rule")
+        fields[field["field_name"]] = {
+            "value_type": {
+                "text": "string",
+                "json_text": "string",
+                "decimal": "decimal",
+                "date": "date",
+            }[field["value_type"]],
+            "nullable": True,
+            "column": {},
+        }
+    return fields
+
+
+def _match_value(value: object, definition: dict, field: str) -> None:
+    if value is None:
+        require(definition["nullable"], "rule_match_value", field)
+        return
+    kind = definition["value_type"]
+    expected = {
+        "string": str,
+        "date": str,
+        "decimal": dict,
+        "integer": int,
+        "boolean": bool,
+        "list": list,
+    }[kind]
+    require(type(value) is expected, "rule_match_value", field)
+    if kind == "decimal" and isinstance(value, dict):
         require(
-            assignment == (operation == "assign"), "correction_operation", "correction"
+            set(value) == {"coefficient", "scale", "source_scale"},
+            "rule_match_value",
+            field,
         )
-    targets = [guard["target"] for guard in payload["guards"]]
-    require(payload["target"] in targets, "correction_target_guard", "correction")
-    if selection:
+        validate_number(value, field)
+    elif kind == "date" and isinstance(value, str):
         require(
-            any(target["table"] in {"lots", "inventory_changes"} for target in targets),
-            "selection_inventory_guard",
-            "correction",
+            re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) is not None,
+            "rule_match_value",
+            field,
         )
+        try:
+            date.fromisoformat(value)
+        except ValueError as error:
+            code = "rule_match_value"
+            raise ContractError(code, field) from error
+    elif kind == "list" and isinstance(value, list):
         require(
-            any(target["table"] in {"transactions", "postings"} for target in targets),
-            "selection_event_guard",
-            "correction",
+            all(type(item) is str for item in value) and value == sorted(set(value)),
+            "rule_match_value",
+            field,
         )
-        _ordered(
-            payload["selection"], ("position_id", "lot_id"), "correction.selection"
+    column = definition["column"]
+    if column and kind in {"string", "list"}:
+        _field_text(value, column, field)
+    if "enum" in column:
+        require(value in column["enum"], "rule_match_value", field)
+
+
+def validate_rule_matches(
+    payload: dict, observation_fields: tuple[dict, ...] | None = None
+) -> None:
+    """Check model types alone, or the complete manifest-bound vocabulary."""
+    fields = rule_match_fields(observation_fields or ())
+    for predicate in payload["matches"]:
+        field, operator, value = (
+            predicate["field"],
+            predicate["operator"],
+            predicate["value"],
         )
-        require(
-            all(_exact(item["units"]) != 0 for item in payload["selection"]),
-            "selection_nonzero",
-            "correction",
-        )
-    _assignments(payload)
+        if operator == "in":
+            require(
+                type(value) is list
+                and bool(value)
+                and len({type(v) for v in value}) == 1,
+                "in_homogeneous",
+                field,
+            )
+        if field not in fields:
+            require(observation_fields is None, "rule_match_field", field)
+            continue
+        definition = fields[field]
+        if operator == "contains":
+            require(
+                definition["value_type"] == "string"
+                and definition["column"].get("text_semantics") != "identifier"
+                and type(value) is str,
+                "contains_text",
+                field,
+            )
+        for operand in value if operator == "in" else [value]:
+            _match_value(operand, definition, field)
 
 
 def _account(payload: dict) -> None:
     periods = payload["expected_periods"]
+    opened, closed = payload["opened_date"], payload["closed_date"]
+    start = payload["coverage_start_date"]
+    require(
+        opened is None or closed is None or opened <= closed,
+        "account_lifecycle",
+        "account",
+    )
+    require(
+        start is None
+        or (
+            (opened is None or opened <= start) and (closed is None or start <= closed)
+        ),
+        "account_coverage_lifecycle",
+        "account",
+    )
     if not payload["statements_expected"]:
         require(
             payload["period_rule"] == "none" and not periods,
@@ -235,6 +290,19 @@ def _account(payload: dict) -> None:
             require(
                 payload["period_rule"] == "explicit", "irregular_period_rule", "account"
             )
+        elif payload["statement_cadence"] == "monthly_cycle":
+            require(
+                payload["period_rule"] == "monthly_cycle",
+                "cycle_period_rule",
+                "account",
+            )
+        else:
+            require(
+                payload["period_rule"] == "calendar", "calendar_period_rule", "account"
+            )
+        require(
+            bool(payload["coverage_basis_ids"]), "coverage_basis_required", "account"
+        )
     if payload["period_rule"] == "explicit":
         require(bool(periods), "explicit_periods", "account")
     else:
@@ -351,32 +419,6 @@ def _conditional_terms(payload: dict) -> None:
             "deliverable_condition",
             "contract_terms",
         )
-
-
-def _identity(payload: dict) -> None:
-    _ordered(payload["members"], ("source_record_id", "event_key"), "identity.members")
-    anchor = payload["anchor"]
-    if anchor["kind"] == "authored_key":
-        require(
-            anchor["id"] in payload["authored_keys"],
-            "identity_anchor_membership",
-            "identity",
-        )
-    else:
-        require(
-            any(
-                member["source_record_id"] == anchor["id"]
-                and member["event_key"] == payload["event_key"]
-                for member in payload["members"]
-            ),
-            "identity_anchor_membership",
-            "identity",
-        )
-    require(
-        not set(payload["retired_ids"]) & set(payload["successor_ids"]),
-        "identity_retired_successor",
-        "identity",
-    )
 
 
 def _simple_semantics(payload: dict) -> None:
@@ -503,11 +545,29 @@ def validate_declaration(payload: object) -> None:
         code = "declaration_type"
         raise ContractError(code, "declaration")
     require(payload.get("schema_version") == 1, "schema_version", "declaration")
+    if payload.get("kind") in {
+        "assign",
+        "split",
+        "identity",
+        "statement_revision",
+        "transfer",
+        "link",
+    }:
+        from jbt.contracts.schemas import journal_entry_schema  # noqa: PLC0415
+
+        try:
+            validate_document(payload, journal_entry_schema())
+        except ValidationError as error:
+            code = "journal_declaration_schema"
+            raise ContractError(code, "declaration") from error
+        return
     schema = _validation_schema()
     kinds = {variant["$ref"].split("/")[-1] for variant in schema["oneOf"]}
     require(payload.get("kind") in kinds, "declaration_kind", "declaration")
     try:
-        validate_document(payload, schema)
+        validate_document(
+            payload, schema["$defs"][payload["kind"]], reference_scope=schema
+        )
     except ValidationError as error:
         msg = "declaration_schema"
         raise ContractError(msg, "payload") from error
@@ -516,8 +576,6 @@ def validate_declaration(payload: object) -> None:
     handlers = {
         "account": _account,
         "contract_terms": _terms,
-        "identity": _identity,
-        "correction": _correction,
     }
     if kind in handlers:
         handlers[kind](payload)
@@ -525,31 +583,14 @@ def validate_declaration(payload: object) -> None:
         _simple_semantics(payload)
         _policy_semantics(payload)
     if kind == "rule":
-        _assignments(payload)
+        _rule_assignments(payload)
+        _ordered(payload["assignments"], ("field",), "rule.assignments")
         _ordered(payload["split"], ("child_key",), "rule.split")
-        known_fields = {row["field_name"] for row in field_registry()} | {
-            "source.status",
-            "source.sequence",
-            "source.sequence_domain",
-            "broker.match",
-        }
-        for match in payload["matches"]:
-            require(match["field"] in known_fields, "rule_match_field", "rule")
-            if match["operator"] == "contains":
-                require(type(match["value"]) is str, "contains_text", "rule")
-            if match["operator"] == "in":
-                value = match["value"]
-                require(
-                    type(value) is list
-                    and bool(value)
-                    and len({type(v) for v in value}) == 1,
-                    "in_homogeneous",
-                    "rule",
-                )
+        validate_rule_matches(payload)
 
 
-def decode_declaration(text: str) -> dict:
-    """Reject duplicate keys, non-JSON numbers, and noncanonical retained JSON."""
+@lru_cache(maxsize=256)
+def _check_declaration(text: str) -> None:
 
     def unique(pairs: list[tuple[str, object]]) -> dict:
         result = {}
@@ -572,4 +613,9 @@ def decode_declaration(text: str) -> dict:
         "canonical_payload_json",
         "payload",
     )
-    return payload
+
+
+def decode_declaration(text: str) -> dict:
+    """Validate retained bytes once and return an isolated mutable payload."""
+    _check_declaration(text)
+    return json.loads(text)

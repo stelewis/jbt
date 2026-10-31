@@ -1,12 +1,8 @@
 from copy import deepcopy
 from dataclasses import replace
 from datetime import date
-from fractions import Fraction
 from hashlib import sha256
-from pathlib import Path
-from shutil import rmtree
 from typing import TYPE_CHECKING, cast
-from uuid import uuid4
 
 import pytest
 from tests.integration.conformance.consumer_arithmetic import Number, Ratio, multiply
@@ -54,7 +50,7 @@ from tests.integration.conformance.reader import read_snapshot
 from tests.integration.conformance.test_reader import _snapshot
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from pathlib import Path
 
     from tests.integration.conformance.reader import Tables
 
@@ -78,16 +74,6 @@ def _feed(case: FixtureCase) -> Feed:
         Member(entity, sha256(case.case_id.encode()).hexdigest(), 1),
         cast("Tables", case.tables),
     )
-
-
-@pytest.fixture
-def verified_root() -> Iterator[Path]:
-    root = Path.cwd() / (".reader-policy-" + uuid4().hex)
-    root.mkdir()
-    try:
-        yield root
-    finally:
-        rmtree(root)
 
 
 def _verified_case(root: Path, name: str) -> tuple[FixtureCase, Feed]:
@@ -137,42 +123,16 @@ def _population(left: FixtureCase, right: FixtureCase) -> PopulationPolicy:
     )
 
 
-def test_independent_owner_copies_count_joint_once_and_attribute_explicit_shares(
-    cases: dict[str, FixtureCase],
-) -> None:
-    left, right = cases["breadth/consumer-a"], cases["breadth/consumer-b"]
-    assert set(left.evidence["blobs"]) != set(right.evidence["blobs"])
-    result = consolidate_cash(
-        [_feed(left), _feed(right)],
-        _population(left, right),
-        period=JANUARY,
-        when=JAN_END,
-    )
-    assert result == {"joint": Number(110, 0)}
-    ownership = OwnershipPolicy(
-        _revision("sixty-forty"),
-        "joint",
-        (Share("owner-a", Number(6, 1)), Share("owner-b", Number(4, 1))),
-    )
-    assert attribute(
-        result["joint"], ownership, shared_account="joint", when=JAN_END
-    ) == {
-        "owner-a": Number(66, 0),
-        "owner-b": Number(44, 0),
-    }
-    with pytest.raises(PolicyError, match="missing-ownership-policy"):
-        attribute(result["joint"], None, shared_account="joint", when=JAN_END)
-
-
-def test_verified_snapshots_feed_ownership_performance_and_alternate_matching(
-    verified_root: Path,
+def test_verified_snapshots_feed_ownership_and_performance(
+    tmp_path: Path,
 ) -> None:
     verified = {
-        name: _verified_case(verified_root, name)
-        for name in ("breadth/consumer-a", "breadth/consumer-b", "pools")
+        name: _verified_case(tmp_path, name)
+        for name in ("breadth/consumer-a", "breadth/consumer-b")
     }
     left, left_feed = verified["breadth/consumer-a"]
     right, right_feed = verified["breadth/consumer-b"]
+    assert set(left.evidence["blobs"]) != set(right.evidence["blobs"])
     population = replace(
         _population(left, right),
         members=(left_feed.member, right_feed.member),
@@ -190,29 +150,9 @@ def test_verified_snapshots_feed_ownership_performance_and_alternate_matching(
         "owner-a": Number(66, 0),
         "owner-b": Number(44, 0),
     }
+    with pytest.raises(PolicyError, match="missing-ownership-policy"):
+        attribute(joint["joint"], None, shared_account="joint", when=JAN_END)
     assert cash_performance(left_feed.tables, _performance(left)) == Ratio(1, 10)
-
-    pool_case, pool_feed = verified["pools"]
-    policy = LotPolicy(
-        _revision("synthetic-fifo"),
-        "synthetic-not-tax-law",
-        "owner",
-        "proof-v1",
-        (_key(pool_case, "L1"), _key(pool_case, "L2")),
-        "principal-only",
-    )
-    for origins, expected in (
-        (policy.ordered_origins, Ratio(126, 1)),
-        (tuple(reversed(policy.ordered_origins)), Ratio(156, 1)),
-    ):
-        matches = match_original_lots(
-            pool_feed.tables,
-            entity=pool_feed.member.entity,
-            units=Number(12, 0),
-            when=date(2026, 1, 4),
-            policy=replace(policy, ordered_origins=origins),
-        )
-        assert matched_principal(matches) == expected
 
 
 def test_selected_authority_does_not_waive_comparable_111_conflict(
@@ -329,14 +269,13 @@ def test_authority_intervals_are_half_open_and_require_complete_unique_coverage(
     ],
 )
 def test_invested_authority_handoff_maps_exact_lots_pools_fees_and_references(
-    verified_root: Path,
+    cases: dict[str, FixtureCase],
     source: str,
     copy: str,
     boundary: date,
     account: str,
 ) -> None:
-    left, _ = _verified_case(verified_root, source)
-    right, _ = _verified_case(verified_root, copy)
+    left, right = cases[source], cases[copy]
     before = gross_state(
         left.tables, _key(left, account), boundary=boundary, basis=DateRole.POSTED
     )
@@ -456,9 +395,9 @@ def _valuation(case: FixtureCase) -> ValuationPolicy:
 
 
 def test_selected_quote_and_direct_fx_policy_never_substitute_another_basis(
-    verified_root: Path,
+    cases: dict[str, FixtureCase],
 ) -> None:
-    case, _ = _verified_case(verified_root, "breadth/quotes")
+    case = cases["breadth/quotes"]
     policy = _valuation(case)
     mark = select_price(case.tables, _key(case, "F"), policy)
     assert mark == Number(103, 0)
@@ -535,7 +474,6 @@ def test_performance_uses_explicit_perimeter_flow_timing_and_not_balance_change(
     case = cases["breadth/consumer-a"]
     policy = _performance(case)
     assert cash_performance(case.tables, policy) == Ratio(1, 10)
-    assert Fraction(165 - 100, 100) == Fraction(65, 100)
     with pytest.raises(PolicyError, match="missing-performance-policy"):
         cash_performance(case.tables, None)
     with pytest.raises(PolicyError, match="incomplete-flow-classification"):
@@ -562,15 +500,19 @@ def test_tax_experiment_rematches_original_pool_contributions_without_overwrite(
         (_key(case, "L1"), _key(case, "L2")),
         "principal-only",
     )
-    matches = match_original_lots(
-        case.tables,
-        entity=_key(case, "A").entity,
-        units=Number(12, 0),
-        when=date(2026, 1, 4),
-        policy=policy,
-    )
-    assert [match.units for match in matches] == [Number(10, 0), Number(2, 0)]
-    assert matched_principal(matches) == Ratio(126, 1)
+    for origins, expected_units, expected_principal in (
+        (policy.ordered_origins, [Number(10, 0), Number(2, 0)], Ratio(126, 1)),
+        (tuple(reversed(policy.ordered_origins)), [Number(12, 0)], Ratio(156, 1)),
+    ):
+        matches = match_original_lots(
+            case.tables,
+            entity=_key(case, "A").entity,
+            units=Number(12, 0),
+            when=date(2026, 1, 4),
+            policy=replace(policy, ordered_origins=origins),
+        )
+        assert [match.units for match in matches] == expected_units
+        assert matched_principal(matches) == expected_principal
     source = next(
         row
         for row in case.tables["inventory_changes"]

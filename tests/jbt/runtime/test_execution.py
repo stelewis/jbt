@@ -3,13 +3,20 @@ from dataclasses import FrozenInstanceError
 from email.message import Message
 from hashlib import sha256
 from importlib import metadata
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
+from tests.fixtures.synthetic_importer.synthetic_statements.adapter import importer
 
 from jbt.contracts.primitives import ContractError
 from jbt.domain.canonical import encode_json
-from jbt.runtime.execution import decode_execution, observe_execution
+from jbt.runtime.execution import (
+    ObservedExecution,
+    decode_execution,
+    observe_execution,
+    select_importers,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -45,6 +52,138 @@ class Distribution(metadata.Distribution):
     def locate_file(self, path: str | PathLike[str]) -> Path:
         message = f"Unexpected producer file lookup: {path}"
         raise AssertionError(message)
+
+
+@pytest.mark.parametrize(
+    ("names", "entries", "code"),
+    [
+        (("ofx", "missing"), ("ofx",), "importer_missing"),
+        (("ofx",), ("ofx", "ofx"), "importer_duplicate"),
+    ],
+)
+def test_all_names_resolve_before_any_plugin_load(
+    release_execution: ObservedExecution,
+    monkeypatch: pytest.MonkeyPatch,
+    names: tuple[str, ...],
+    entries: tuple[str, ...],
+    code: str,
+) -> None:
+    monkeypatch.setattr(
+        metadata,
+        "entry_points",
+        lambda **_kwargs: [
+            SimpleNamespace(
+                name=name,
+                dist=Distribution("jbt", "0.1.0a1"),
+                load=lambda: pytest.fail("loaded before preflight finished"),
+            )
+            for name in entries
+        ],
+    )
+    with pytest.raises(ContractError, match=code):
+        select_importers(release_execution, names)
+
+
+@pytest.mark.parametrize(
+    ("change", "code"),
+    [
+        ({"extract": None}, "importer_protocol"),
+        ({"extract": dict}, "importer_protocol"),
+        ({"contract_version": 2}, "importer_contract_version"),
+        ({"contract_version": True}, "importer_contract_version"),
+        ({"profile_version": 0}, "importer_profile"),
+        ({"profile_version": -1}, "importer_profile"),
+        ({"profile_version": True}, "importer_profile"),
+        ({"maximum_bytes": 0}, "importer_profile"),
+    ],
+)
+def test_rejects_unsupported_plugin_contract(
+    release_execution: ObservedExecution,
+    monkeypatch: pytest.MonkeyPatch,
+    change: dict,
+    code: str,
+) -> None:
+    plugin = SimpleNamespace(
+        **{
+            "contract_version": 1,
+            "profile": "synthetic",
+            "profile_version": 1,
+            "maximum_bytes": 1,
+            "extract": lambda _data, _context: {},
+            **change,
+        }
+    )
+    entry = SimpleNamespace(
+        name="synthetic",
+        dist=Distribution("jbt", "0.1.0a1"),
+        load=lambda: plugin,
+    )
+    monkeypatch.setattr(metadata, "entry_points", lambda **_kwargs: [entry])
+    with pytest.raises(ContractError, match=code):
+        select_importers(release_execution, ("synthetic",))
+
+
+def test_preflight_validates_call_shape_without_evaluating_plugin_annotations(
+    release_execution: ObservedExecution,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entry = SimpleNamespace(
+        name="synthetic-statements",
+        dist=Distribution("jbt-synthetic-statements", "1.2.3"),
+        load=lambda: importer,
+    )
+    monkeypatch.setattr(metadata, "entry_points", lambda **_kwargs: [entry])
+    document = release_execution.document()
+    document["distributions"].append(
+        {"name": "jbt-synthetic-statements", "version": "1.2.3"}
+    )
+    release_execution = decode_execution(encode_json(document, integer_strings=False))
+    execution, plugins = select_importers(release_execution, (entry.name,))
+    assert plugins == {entry.name: importer}
+    assert execution.is_release
+    assert execution.document()["importers"][0]["distribution"] == (
+        "jbt-synthetic-statements"
+    )
+
+
+@pytest.mark.parametrize("profile_version", [1, 2])
+def test_unselected_plugins_never_load_and_owner_controls_cacheability(
+    release_execution: ObservedExecution,
+    monkeypatch: pytest.MonkeyPatch,
+    profile_version: int,
+) -> None:
+    plugin = SimpleNamespace(
+        contract_version=1,
+        profile="synthetic",
+        profile_version=profile_version,
+        maximum_bytes=1,
+        extract=lambda _data, _context: {},
+    )
+    selected = SimpleNamespace(
+        name="synthetic",
+        dist=Distribution("JBT", "0.1.0a1"),
+        load=lambda: plugin,
+    )
+    unused = SimpleNamespace(
+        name="unused",
+        dist=None,
+        load=lambda: pytest.fail("unselected plugin loaded"),
+    )
+    monkeypatch.setattr(metadata, "entry_points", lambda **_kwargs: [selected, unused])
+    release, plugins = select_importers(release_execution, ("synthetic",))
+    assert plugins == {"synthetic": plugin}
+    assert release.is_release
+    assert release.document()["importers"][0]["distribution"] == "jbt"
+    assert release.document()["importers"][0]["profile_version"] == profile_version
+    for direct_url in (
+        '{"dir_info":{"editable":false}}',
+        '{"vcs_info":{"commit_id":"invented-commit"}}',
+    ):
+        selected.dist = Distribution("jbt", "0.1.0a1", direct_url=direct_url)
+        development, _ = select_importers(release_execution, ("synthetic",))
+        assert not development.is_release
+        assert development.digest != release.digest
+        assert development.producer_digest == release.producer_digest
 
 
 @pytest.fixture
@@ -204,7 +343,7 @@ def test_bad_direct_install_metadata_fails_safely(
     [
         (["jbt", None], ["1.0", "1"], "distribution_metadata"),
         (["jbt", "other"], ["1.0", None], "distribution_metadata"),
-        (["jbt", "other"], ["1.0", "non-NFC-e\u0301"], "text_nfc"),
+        (["jbt", "other"], ["1.0", "non-NFC-e\u0301"], "execution_record"),
         (["jbt", "bad/name"], ["1.0", "1"], "distribution_metadata"),
         (["jbt", "a_b", "A.B"], ["1.0", "1", "1"], "distribution_duplicate"),
         (["jbt", "JBT"], ["1.0", "1.0"], "distribution_duplicate"),
@@ -225,13 +364,15 @@ def test_bad_visible_metadata_fails_safely(
     with pytest.raises(ContractError) as error:
         observe_execution()
     assert error.value.code == code
-    assert str(error.value) == f"{code}: execution." + (
-        "producer"
+    location = (
+        "execution"
+        if code == "execution_record"
+        else "execution.producer"
         if code == "producer_missing"
-        else "distributions.version"
-        if code == "text_nfc"
-        else "distributions"
+        else "execution.distributions"
     )
+    assert error.value.location == location
+    assert str(error.value) == f"{code}: {location}"
 
 
 @pytest.mark.parametrize("field", ["Name", "Version"])

@@ -1,0 +1,17 @@
+[project]
+name = "jbt-synthetic-statements"
+version = "1.2.3"
+requires-python = ">=3.14"
+dependencies = ["jbt"]
+
+[project.entry-points."jbt.importers"]
+synthetic-statements = "synthetic_statements.adapter:importer"
+synthetic-unselected = "synthetic_statements.unselected:importer"
+
+[build-system]
+requires = ["uv_build>=0.12.19"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "synthetic_statements"
+module-root = ""

@@ -3,11 +3,12 @@
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from unicodedata import category, normalize
+from unicodedata import normalize
 
 from jbt.domain.errors import IdentityError
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 def validate_key(value: str, location: str) -> None:
@@ -16,7 +17,7 @@ def validate_key(value: str, location: str) -> None:
         not isinstance(value, str)
         or not value
         or normalize("NFC", value) != value
-        or any(category(character) == "Cc" for character in value)
+        or _CONTROL.search(value) is not None
     ):
         raise IdentityError(constraint="canonical_key_required", location=location)
     try:

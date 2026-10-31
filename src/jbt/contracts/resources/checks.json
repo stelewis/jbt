@@ -226,6 +226,17 @@
       "implementation": "validate_tables"
     },
     {
+      "name": "event_support_membership",
+      "owner": "publication",
+      "tables": [
+        "event_support",
+        "economic_identities",
+        "source_records",
+        "transactions"
+      ],
+      "implementation": "validate_tables"
+    },
+    {
       "name": "observation_payload_and_evidence",
       "owner": "publication",
       "tables": [
@@ -344,7 +355,7 @@
         "balance_assertions",
         "balances"
       ],
-      "implementation": null
+      "implementation": "source_checks"
     },
     {
       "name": "model_fidelity",
@@ -354,7 +365,7 @@
         "balance_assertions",
         "balances"
       ],
-      "implementation": null
+      "implementation": "model_checks"
     },
     {
       "name": "committed_as_of_coverage",
@@ -362,9 +373,11 @@
       "tables": [
         "accounts",
         "statements",
+        "statement_coverage",
+        "declarations",
         "build"
       ],
-      "implementation": null
+      "implementation": "projected_account_checks"
     },
     {
       "name": "noncommutative_order_evidence",
@@ -402,7 +415,7 @@
       "tables": [
         "declarations"
       ],
-      "implementation": null
+      "implementation": "evaluate_guard"
     },
     {
       "name": "revision_digest_identity",
@@ -410,7 +423,7 @@
       "tables": [
         "declarations"
       ],
-      "implementation": null
+      "implementation": "validate_tables"
     },
     {
       "name": "atomic_publication_and_byte_integrity",

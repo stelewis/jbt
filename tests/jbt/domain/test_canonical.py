@@ -24,7 +24,9 @@ from jbt.domain.numbers import ExactDecimal
         (0, b"i1:0"),
         (-12, b"i3:-12"),
         ("", b"s0:"),
-        ("e\u0301", b"s2:\xc3\xa9"),
+        ("é", b"s2:\xc3\xa9"),
+        ("e\u0301", b"s3:e\xcc\x81"),
+        (" e\u0301\n\x00 ", b"s7: e\xcc\x81\n\x00 "),
         ("a\nb", b"s3:a\nb"),
         ((1, 1, None), b"l11:i1:1i1:1n0:"),
         (date(2026, 9, 29), b"d10:2026-09-29"),
@@ -55,9 +57,9 @@ def test_domain_order_multiplicity_and_source_scale_are_significant() -> None:
     )
 
 
-def test_duplicate_normalized_fields_and_invalid_unicode_fail() -> None:
+def test_duplicate_fields_and_invalid_unicode_fail() -> None:
     with pytest.raises(CanonicalError, match="unique_field_names"):
-        encode_record("a", (("é", 1), ("e\u0301", 2)))
+        encode_record("a", (("é", 1), ("é", 2)))
     with pytest.raises(CanonicalError, match="utf8_required"):
         encode("\ud800")
     with pytest.raises(CanonicalError, match="int64_required"):
@@ -75,14 +77,14 @@ def test_coercions_and_mutable_containers_have_no_canonical_encoding(
 
 
 @pytest.mark.golden
-def test_json_literal_vector_preserves_types_and_normalizes_text() -> None:
+def test_json_literal_vector_preserves_types_and_exact_text() -> None:
     value = {
         "z": [None, True, False, -12, "12", "e\u0301", "\n"],
         "a": {"source_scale": None, "scale": 1, "coefficient": "842"},
     }
     expected = (
         b'{"a":{"coefficient":"842","scale":1,"source_scale":null},'
-        b'"z":[null,true,false,-12,"12","\xc3\xa9","\\n"]}\n'
+        b'"z":[null,true,false,-12,"12","e\xcc\x81","\\n"]}\n'
     )
     assert encode_json(value, integer_strings=False) == expected
     assert (
@@ -148,4 +150,25 @@ def test_json_integer_and_nesting_bounds() -> None:
 def test_json_row_integer_strings_do_not_coerce_booleans_or_nulls() -> None:
     assert encode_json([0, -1, True, False, None, "2"], integer_strings=True) == (
         b'["0","-1",true,false,null,"2"]\n'
+    )
+
+
+@pytest.mark.parametrize("identifier", ["", "e\u0301", "a\nb", "\x00", "\ud800"])
+def test_record_and_json_identifier_boundaries(identifier: str) -> None:
+    for operation in (
+        lambda: encode_record(identifier, (("field", "value"),)),
+        lambda: encode_record("domain", ((identifier, "value"),)),
+        lambda: encode_json({identifier: "value"}, integer_strings=False),
+    ):
+        with pytest.raises(CanonicalError):
+            operation()
+
+
+def test_equivalent_descriptive_text_is_byte_and_digest_distinct() -> None:
+    assert encode("é") != encode("e\u0301")
+    assert encode_json({"text": "é"}, integer_strings=False) != encode_json(
+        {"text": "e\u0301"}, integer_strings=False
+    )
+    assert digest_record("test", (("text", "é"),)) != digest_record(
+        "test", (("text", "e\u0301"),)
     )

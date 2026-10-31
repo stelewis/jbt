@@ -121,6 +121,28 @@
     }
   ],
   "rows": {
+    "statement_coverage": [
+      {
+        "statement_id": "@irregular-first",
+        "part_key": "movements",
+        "coverage_basis": "settled-units",
+        "date_role": "settled",
+        "period_start": "2026-10-20",
+        "period_end": "2026-11-02",
+        "is_complete": true,
+        "is_eclipsed": false
+      },
+      {
+        "statement_id": "@irregular-empty",
+        "part_key": "movements",
+        "coverage_basis": "settled-units",
+        "date_role": "settled",
+        "period_start": "2026-11-02",
+        "period_end": "2026-11-09",
+        "is_complete": true,
+        "is_eclipsed": false
+      }
+    ],
     "statements": [
       {
         "statement_id": "@irregular-first",
@@ -130,7 +152,7 @@
         "period_start": "2026-10-20",
         "period_end": "2026-11-01",
         "stated_currency": "USD",
-        "source_format": "json",
+        "importer_id": "synthetic-json",
         "is_eclipsed": false,
         "coverage_basis": "settled-units",
         "declaration_id": "@declaration:P"
@@ -143,7 +165,7 @@
         "period_start": "2026-11-02",
         "period_end": "2026-11-08",
         "stated_currency": "USD",
-        "source_format": "json",
+        "importer_id": "synthetic-json",
         "is_eclipsed": false,
         "coverage_basis": "settled-units",
         "declaration_id": "@declaration:P"

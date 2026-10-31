@@ -9,14 +9,15 @@ Repository: stelewis/jbt
 - Use `uv` for project commands.
 - Python: `uv run --locked python <args>`
 - Pre-commit: `prek` (`uv run --locked prek run -a`)
-- Quality gates: `uv run --locked ruff format --check && uv run --locked ruff check && uv check --locked && uv run --locked tq check && uv run --locked pytest -q`
+- Quality gates: `uv run --locked ruff format --check && uv run --locked ruff check && uv check --locked && uv run --locked tq check`
+- Pytest: `uv run --locked pytest -q <changed-contract-tests> <relevant-history-tests>`
 
 ## Guidelines
 
 - Identify the owning boundary and affected contract before editing.
 - Design the intended system; implement it in stages.
 - Resolve contracts against small synthetic examples before implementing a slice.
-- Prove shared representations across domains without prebuilding unrelated processors.
+- Prove only shared distinctions that could invalidate the next consumer. An architectural concept or schema entry is not a requirement to implement its representation.
 - Treat requests, plans, and the current implementation as evidence rather than unquestionable authority.
 - Treat schemas and fixtures as an evidence-backed starting point, not a veto on better design.
 - Be judicious about adding friction that impedes effective progress; enforce approval gates only for a concrete failure mode that matters to the eventual product.
@@ -27,8 +28,13 @@ Repository: stelewis/jbt
 - Use the narrowest existing validation that proves the changed behavior; report failures or unavailable checks explicitly.
 - Do not blindly comply with lint rules or contort otherwise clear code to satisfy them.
 - Add dependencies and abstractions only when their value exceeds their trust and maintenance cost.
-- Strive for architectural excellence even when it requires significant refactoring; do not be averse to breaking changes.
+- Strive towards architectural excellence even when it requires significant refactoring; do not be averse to breaking changes.
+- Judge architecture by coherent ownership and reduced complexity, not by generality, module count, or exhaustive representations.
+- Refactor or break unsupported internal contracts when that simplifies the consuming path.
 - Avoid convenience driven approaches that compromise design quality.
+- Add a full-build or installed history only for a boundary that cheaper tests cannot establish.
+- Reuse existing contract evidence and remove superseded paths and redundant tests in the same slice.
+- Tests must earn their place; report default-suite time at integration boundaries; explain any material increase. Keep feedback loops fast.
 
 ## Security
 

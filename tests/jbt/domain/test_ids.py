@@ -4,7 +4,7 @@ from jbt.domain.errors import IdentityError
 from jbt.domain.ids import EntityId, RecordId, RecordKind, SemanticKey
 
 
-@pytest.mark.parametrize("value", ["", "e\u0301", "x\n", "\ud800", "\x7f"])
+@pytest.mark.parametrize("value", ["", "e\u0301", "x\n", "\ud800", "\x7f", "\x85"])
 def test_keys_reject_noncanonical_or_control_text(value: str) -> None:
     with pytest.raises(IdentityError):
         EntityId(value)

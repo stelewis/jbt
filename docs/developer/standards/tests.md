@@ -1,149 +1,78 @@
 # Testing Standards
 
-Treat the test suite as a first-class part of the codebase.
-
-Keep tests:
-
-- **Discoverable**: easy to find the test for a module.
-- **Focused**: small surface area, minimal cross-module coupling.
-- **Actionable**: failures point to one contract, not "the system".
-- **Maintainable**: tests refactor with the code (SOLID applies here too).
+Test each contract at the narrowest boundary that can establish its behavior. Keep failures specific, expectations independently calculated, and test ownership discoverable.
 
 ## Contract-first slices
 
-Before implementing a slice, name its owning contract and resolve small synthetic inputs to independently calculated expected records, outputs, and failures. Include ambiguity, missing input, and the boundary conditions that could invalidate the design, not just a happy path.
+Before implementing a slice, name its owning contract and independently calculate expected records, outputs, and failures for small synthetic inputs. Include ambiguity, missing input, and boundary cases that could invalidate the design.
 
 Distinguish three kinds of evidence:
 
-- **Contract proof:** versioned schemas and complete fixtures validate identities, relationships, invariants, and what an independent reader can reconstruct. Exercise shared representations across the intended domains before relying on them for durable publication; do not implement every producer merely to construct its expected output.
-- **Boundary feasibility:** use the actual writer, reader, arithmetic, or filesystem primitive when its behavior decides the contract. A mock or JSON-only round trip does not prove Parquet types, SQL arithmetic, or durable publication.
-- **Processor proof:** establish the selected slice's expected transformations before writing its processor, then require that processor to produce them through the real boundaries. Reuse contract fixtures rather than maintaining a parallel example system.
+- **Contract proof:** establish shared identities, relationships, and distinctions needed by the next consumer. Implement detailed representations and validation when a processor needs them.
+- **Boundary feasibility:** use the actual writer, reader, arithmetic, or filesystem primitive when its behavior decides the contract. A JSON round trip cannot prove Parquet types, SQL arithmetic, or durable publication.
+- **Processor proof:** require the processor to produce the independently calculated expectations through the affected boundaries, reusing contract fixtures.
 
-Hand-authored allocation or action results can prove a reader contract, but cannot prove that a future booking or action processor calculates them correctly. Accepted ADRs record decisions; passing executable checks establish readiness. A failing feasibility check reopens the owning decision, not the correctness requirement.
+Hand-authored results prove a reader contract, not a processor's calculations. Keep financial verification independent of the producer without duplicating its entire validation implementation. If evidence exposes a flawed contract, revise it and its independent expectations together. Specifications define requirements; executable tests establish that the implementation meets them.
 
-Existing systems and observed failures can supply scenarios, not authoritative expected behavior. Reconstruct public fixtures from scratch with invented identities, dates, amounts, and text, preserving only the relevant structural relationships. Do not copy private code, records, screenshots, paths, or source-repository references into public artifacts. Renaming identifiers in a real statement is not sufficient anonymization.
+## Test scope and ownership
 
-## Structure Rules
+Test transformations and consumer policy directly on small typed inputs or validated rows. A direct test may combine pure collaborators; crossing module boundaries does not by itself require a full build.
 
-### One test module per source module (minimum)
+Use full builds when the contract concerns orchestration, publication, custody, or replay. Each expensive workflow test must catch a failure that cheaper model, command, storage, or reader tests cannot. Exercise serialization on representative financial shapes rather than publishing every arithmetic fixture.
 
-For each source module there must be *at least one* corresponding test module.
+### Unit tests
 
-Required mapping:
+Mirror the owning source module by default:
 
 - Source: `src/<project>/<path>/<module>.py`
 - Test: `tests/<project>/<path>/test_<module>.py`
 
-This is intentionally strict. It prevents "mystery tests" and keeps the suite aligned as the architecture evolves.
+Prove shared behavior once at its actual owner, not in every caller. A source module does not require a separate suite if its contract is already proved elsewhere; an import-only smoke test is not a substitute for behavioral assertions.
 
-A smoke test can establish importability, but does not satisfy a contract or slice-completion gate.
+Split distinct responsibilities with stable `test_<module>_<qualifier>.py` names, using the qualifiers allowed by the [test configuration](../../../pyproject.toml). Relocate or consolidate tests when ownership changes rather than duplicating a suite because a module was split.
 
-### Splitting tests (qualifiers)
+### Integration and installed acceptance
 
-If a test suite is too large for one file, split into multiple files by concern. Use the naming convention:
+- Put workflow tests that exercise interactions across real boundaries in `tests/integration/`, mark them with `pytest.mark.integration`, and use workflow-oriented names.
+- Put installed-package acceptance tests in `tests/e2e/` with `pytest.mark.e2e`. This suite proves packaged resources, entry points, release provenance, cache reuse, and relocated checked replay. Ordinary tests own detailed financial and correction scenarios.
 
-- `test_<module>_<qualifier>.py`
+Installed-package tests are excluded by default because provisioning may access the network. Build and install once per session, reusing the environment across these tests, or supply the final wheel with `--release-wheel`. See [local workflows](../tools/local-workflows.md) for commands and provisioning.
 
-Add a qualifier only when it improves clarity and separation of concerns. Qualifiers should be stable and describe a single responsibility.
+## Fixtures and expected results
 
-Avoid qualifiers that encode implementation details or ephemeral refactors.
+Invent public fixtures from scratch using contract boundaries, public specifications, and observed failure patterns. Never copy private code, records, screenshots, paths, or source-repository references into them; renaming real records is not sufficient anonymization. Synthetic cases establish the stated behavior, not exhaustive real-world coverage.
 
-Note: pytest runs with `--import-mode=importlib` (see `pyproject.toml`) to avoid import name clashes across similarly named tests.
+- Share reusable fixtures through `conftest.py` at the narrowest appropriate level.
+- Keep fixture files beside their tests, small, versioned, and stably ordered.
+- **Synthetic** describes invented inputs; **golden** describes independently reviewed expected results. Golden tests remain offline and deterministic.
+- Assert meaningful records or fields rather than freezing entire snapshots. Explain semantic changes to golden results; never derive expected financial results solely from the implementation under test.
 
-### Single-target rule (unit tests)
+## Test quality
 
-By default, a unit test module targets exactly one source module: the one implied by its path/name.
+- Protect an owned contract or observed failure, not incidental text, layout, forwarding functions, or command ordering.
+- Parameterize distinct semantics rather than equivalent syntax or Cartesian combinations.
+- Prove structural validation once, with representative boundary failures, rather than repeating missing/extra-field matrices for every variant and decoder.
+- Use the markers registered in [`pyproject.toml`](../../../pyproject.toml).
 
-This means:
+## Validation workflow
 
-- Do not keep a monolithic test file after splitting a large source module into smaller modules.
-- Do not "reach across" and assert behavior that belongs to other modules.
+Run tests for the changed contract and relevant integration workflow tests together during development. Run the complete default suite at integration boundaries. Also run the installed-package acceptance suite when execution, packaging, custody, or replay changes.
 
-If you need behavior across modules, the contract usually belongs in a higher-level integration test.
+Measure with `--durations=10`; reduce repeated construction and scenarios before adding parallelism or excluding tests. Scaling tests assert bounded work or evidence size, not elapsed-time thresholds. At integration boundaries, report the test selector and default-suite elapsed time; explain material increases in terms of the contracts they protect.
 
-### Integration tests
+### Test-quality checks
 
-Integration tests are allowed when they validate real workflows. These may span multiple modules by design.
-
-Place integration tests in `tests/integration/` to separate them from unit tests. This keeps the unit test suite focused and discoverable.
-
-Rules:
-
-- Mark integration tests with `pytest.mark.integration`.
-- Keep integration test names workflow-oriented (e.g. `test_ingest_cli.py`).
-
-### End-to-end tests
-
-If needed, place in `tests/e2e/` and mark with `pytest.mark.e2e`.
-
-### Golden / snapshot fixture tests
-
-Golden (aka “snapshot”) tests are allowed when they validate a correctness-critical contract that is hard to express as small unit assertions.
-
-- **Synthetic** describes the input's origin; **golden** describes an independently reviewed expected result. A synthetic case can have golden outputs.
-- Derive cases from contract boundaries, public format specifications, and observed failure patterns. Synthetic conformance establishes the stated cases, not exhaustive real-world coverage.
-- Never generate an expected financial result solely with the implementation being tested. Calculate small expectations independently and explain intentional changes.
-
-Rules:
-
-- Must be fully offline and deterministic (no network, no wall-clock time).
-- Keep fixtures small and reviewable (prefer JSONL/JSON; stable ordering; version fields).
-- Avoid “assert the entire snapshot equals a blob” unless you have a strong reason.
-
-Placement:
-
-- Keep golden tests in `tests/<project>/...` near the subsystem they validate.
-- Store fixture files adjacent to the test module (e.g. `fixtures/golden` or `fixtures/synthetic`).
-
-### Excluded Tests
-
-Some marked tests may be excluded to keep `pytest` fast and deterministic. Run them explicitly when needed:
-
-```bash
-uv run --locked pytest -m e2e
-```
-
-## Test Quality Standards
-
-### Avoid these anti-patterns
-
-- **Monolithic unit tests**: one test module covering many unrelated modules.
-- **Cross-module unit tests**: tests with no clear single target.
-- **Duplicated coverage**: multiple suites asserting the same contract.
-- **Redundant tests**: re-testing behavior already validated elsewhere.
-- **Structure mismatches**: test location doesn’t mirror the source module.
-- **Misnamed tests**: name implies a different target than what it covers.
-- **Orphaned tests**: tests primarily covering code that no longer exists.
-- **Vacuous tests**: tests that pass without meaningfully exercising behavior.
-- **Change-detector tests**: assertions that freeze incidental text, layout, or command ordering without protecting an owned contract.
-- **Duplicated integration scenarios**: repeated expensive setup for behavior already established by another case.
-- **Very large test modules**: tests that try to cover too much in one suite.
-
-Use this practical refactor rule:
-
-- If you split `foo.py` into `foo/alpha.py` and `foo/beta.py`, the tests should split too. Keeping `test_foo.py` as a grab-bag is the failure mode to avoid.
-
-### Use pytest markers
-
-Use markers to communicate intent and enable selective runs.
-
-Use the project markers registered in `pyproject.toml` if the test is one of:
-
-- `pytest.mark.e2e`: end-to-end tests (full user workflows).
-- `pytest.mark.golden`: deterministic golden/snapshot fixture tests (offline).
-- `pytest.mark.integration`: multi-module workflow tests.
-- `pytest.mark.regression`: tests added for a fixed bug/regression.
-- `pytest.mark.slow`: tests that may be skipped in fast CI jobs.
-- `pytest.mark.smoke`: quick, minimal tests (including placeholders).
-
-### Fixtures
-
-Place reusable fixtures in `conftest.py` at appropriate levels to share them across test modules, avoid duplication, and reduce refactor surface.
-
-## Workflow
-
-Run the automated test-quality checker with:
+Run layout and size checks with:
 
 ```bash
 uv run --locked tq check
 ```
+
+The [`tq` configuration](../../../pyproject.toml) treats misplaced or orphaned suites as errors and missing module mappings as informational.
+
+Record reviewed exceptions in the target's `accepted_findings`:
+
+- `mapping-missing-test`: exact source path relative to the package directory; rationale naming the proof owner.
+- `test-file-too-large`: exact path relative to `test_root`; rationale and `max_non_blank_lines` set to the reviewed size.
+
+Remove unused acceptances and update rationales when proof ownership moves. Review cohesion, assertion quality, and runtime cost directly.

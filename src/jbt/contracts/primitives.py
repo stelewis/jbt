@@ -1,8 +1,10 @@
 """Bounded scalar checks shared by table and declaration boundaries."""
 
 import re
-import unicodedata
 from fractions import Fraction
+
+from jbt.domain.errors import IdentityError
+from jbt.domain.ids import validate_key
 
 SCALE_LIMIT = 38
 
@@ -58,16 +60,29 @@ def validate_number(value: dict, location: str) -> None:
     )
 
 
+def validate_text(value: str, location: str) -> None:
+    """Require exact UTF-8 without normalization or character repair."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        code = "text_utf8"
+        raise ContractError(code, location) from error
+
+
+def validate_identifier(value: str, location: str) -> None:
+    """Apply the domain key contract at producer boundaries."""
+    try:
+        validate_key(value, location)
+    except IdentityError as error:
+        code = error.constraint
+        raise ContractError(code, location) from error
+
+
 def validate_json_values(value: object, location: str) -> None:
-    """Reject floats, non-NFC text, and noncanonical embedded decimal groups."""
+    """Reject floats, invalid Unicode, and noncanonical decimal groups."""
     require(type(value) is not float, "json_float", location)
     if isinstance(value, str):
-        require(unicodedata.normalize("NFC", value) == value, "text_nfc", location)
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError as error:
-            code = "text_utf8"
-            raise ContractError(code, location) from error
+        validate_text(value, location)
     elif type(value) is int:
         require(-(2**63) <= value < 2**63, "json_integer_range", location)
     elif isinstance(value, list):
@@ -78,5 +93,5 @@ def validate_json_values(value: object, location: str) -> None:
             validate_number(value, location)
         for key, item in value.items():
             require(isinstance(key, str), "json_object_key", location)
-            validate_json_values(key, location)
+            validate_identifier(key, location)
             validate_json_values(item, f"{location}.{key}")

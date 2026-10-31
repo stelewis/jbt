@@ -9,26 +9,14 @@
       "id": "identity-purchase",
       "kind": "identity",
       "payload": {
-        "record_kind": "transaction",
-        "event_key": "purchase",
-        "anchor": {
-          "kind": "source_record",
-          "id": "@source:purchase"
-        },
-        "members": [
-          {
-            "source_record_id": "@source:purchase",
-            "event_key": "purchase"
-          },
-          {
-            "source_record_id": "@source:posted",
-            "event_key": "purchase"
-          }
-        ],
-        "authored_keys": [],
-        "retired_ids": [],
-        "successor_ids": [],
-        "guards": [],
+        "sequence": 1,
+        "previous_entry_digest": null,
+        "entity_id": "synthetic-owner",
+        "declaration_key": "identity-purchase",
+        "operation": "record",
+        "prior_entry_digest": null,
+        "reviewed_attempt_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "payload_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "reason": "Invented AUTH and POSTED evidence explicitly correspond despite changed external IDs."
       }
     },

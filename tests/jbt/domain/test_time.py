@@ -8,13 +8,114 @@ from jbt.domain.time import (
     Instant,
     LegDate,
     Precision,
+    SourceTimeObservation,
     TimeObservation,
     ZoneDecision,
     ZoneResolution,
+    civil_time,
     resolve_instant,
     shifted_date,
+    source_instant,
     validate_interval,
 )
+
+
+def test_source_second_offset_and_long_fraction_convert_without_rounding() -> None:
+    observation = SourceTimeObservation(
+        "1970-01-01",
+        "00:00:36.12345678901234567890123456789012345678",
+        36,
+        None,
+        Precision.FRACTIONAL_SECOND,
+        38,
+    )
+    instant = source_instant(observation, offset_seconds=36)
+    assert instant == Instant(0, "12345678901234567890123456789012345678")
+    converted = civil_time(
+        instant,
+        offset_seconds=-18000,
+        zone="America/New_York",
+        precision=Precision.FRACTIONAL_SECOND,
+    )
+    assert converted.date == date(1969, 12, 31)
+    assert converted.local == "19:00:00.12345678901234567890123456789012345678"
+    assert converted.offset_minutes == -300
+    with pytest.raises(TemporalError, match="zone_offset_disagreement"):
+        source_instant(observation, offset_seconds=0)
+
+
+def test_civil_conversion_rejects_unrepresentable_target_offset_and_date() -> None:
+    with pytest.raises(TemporalError, match="model_offset_unsupported"):
+        civil_time(
+            Instant(0, None),
+            offset_seconds=36,
+            zone="Synthetic/Zone",
+            precision=Precision.SECOND,
+        )
+    with pytest.raises(TemporalError, match="civil_date_range"):
+        civil_time(
+            Instant(253402300800, None),
+            offset_seconds=0,
+            zone="Etc/UTC",
+            precision=Precision.SECOND,
+        )
+
+
+@pytest.mark.parametrize(
+    ("civil", "local", "offset", "precision", "digits"),
+    [
+        ("0000-02-29", None, None, Precision.DATE, None),
+        ("0400-02-29", "23:59:60", 18036, Precision.SECOND, None),
+        ("2026-01-01", "23:59:60.124", -18036, Precision.FRACTIONAL_SECOND, 3),
+        ("2026-01-01", "00:00", -36, Precision.MINUTE, None),
+    ],
+)
+def test_source_time_preserves_calendar_leap_second_and_exact_offset(
+    civil: str,
+    local: str | None,
+    offset: int | None,
+    precision: Precision,
+    digits: int | None,
+) -> None:
+    value = SourceTimeObservation(civil, local, offset, "StatedZone", precision, digits)
+    assert (value.date, value.local, value.offset_seconds, value.zone) == (
+        civil,
+        local,
+        offset,
+        "StatedZone",
+    )
+
+
+@pytest.mark.parametrize(
+    "civil",
+    [
+        "0000-02-30",
+        "0100-02-29",
+        "2026-00-01",
+        "2026-01-00",
+        "2026-1-01",
+        "10000-01-01",
+    ],
+)
+def test_source_calendar_rejects_invalid_dates(civil: str) -> None:
+    with pytest.raises(TemporalError):
+        SourceTimeObservation(civil, None, None, None, Precision.DATE, None)
+
+
+@pytest.mark.parametrize(
+    "local", ["24:00:00", "23:60:00", "23:59:61", "23:59", "23:59:60.1"]
+)
+def test_source_clock_keeps_precision_and_range_strict(local: str) -> None:
+    with pytest.raises(TemporalError):
+        SourceTimeObservation("0000-01-01", local, None, None, Precision.SECOND, None)
+
+
+@pytest.mark.parametrize("offset", [-86400, 86400, True])
+def test_source_offset_requires_bounded_integer_seconds(offset: int) -> None:
+    with pytest.raises(TemporalError, match="offset_seconds_range"):
+        SourceTimeObservation(
+            "2026-01-01", "00:00:00", offset, None, Precision.SECOND, None
+        )
 
 
 def test_leg_unknown_does_not_inherit_or_invent_another_role() -> None:
@@ -32,7 +133,7 @@ def test_leg_unknown_does_not_inherit_or_invent_another_role() -> None:
 
 def test_date_only_with_zone_is_not_midnight() -> None:
     observation = TimeObservation(
-        date(2026, 9, 29), None, None, "Pacific/Auckland", Precision.DATE, None
+        date(2026, 9, 29), None, None, "Europe/Paris", Precision.DATE, None
     )
     with pytest.raises(TemporalError, match="date_only_has_no_instant"):
         resolve_instant(observation, resolution=None)

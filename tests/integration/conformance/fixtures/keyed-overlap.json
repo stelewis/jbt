@@ -1,0 +1,123 @@
+{
+  "extends": "cash.json",
+  "case_id": "keyed-overlap",
+  "expected_answers": {
+    "positions": {
+      "cash-A": "110"
+    },
+    "cash_flow": {
+      "external_credit": "20",
+      "expense": "10"
+    },
+    "source_closing": "110",
+    "model_without_debit": "115",
+    "compensating_omission_balance": "110",
+    "keyed_events": 3,
+    "support_counts": {
+      "credit": 2,
+      "debit": 2,
+      "identical-debit": 1
+    }
+  },
+  "negative_cases": [
+    {
+      "id": "double-support",
+      "mutation": "duplicate_component_membership",
+      "owner": "event-support",
+      "expected": "duplicate-membership"
+    },
+    {
+      "id": "changed-source-key",
+      "mutation": "missing_anchor_evidence",
+      "owner": "economic-identity",
+      "expected": "missing-source-key-anchor"
+    }
+  ],
+  "replacements": [
+    {
+      "path": ["oracle_notes"],
+      "value": [
+        "The deposit and debit each have two retained occurrences but one source-keyed economic event. Confirming evidence adds no cash.",
+        "Two same-day purchases have identical amounts and description, but distinct stated keys D1 and D2. Both debit cash: 100 + 20 - 5 - 5 = 110.",
+        "Event support is an independent occurrence-to-event relation, not inferred from provenance edges."
+      ]
+    },
+    {
+      "path": ["events", 1, "event_key"],
+      "value": "transaction"
+    },
+    {
+      "path": ["events", 1, "source_key"],
+      "value": {"domain": "FITID", "key": "C1"}
+    },
+    {
+      "path": ["events", 1, "support"],
+      "value": [
+        {
+          "id": "credit-confirmation",
+          "source_key": {"domain": "FITID", "key": "C1"},
+          "kind": "confirming",
+          "evidence": "INVENTED second rolling download: deposit C1 USD 20.00 posted 2026-01-12."
+        }
+      ]
+    },
+    {
+      "path": ["events", 2, "event_key"],
+      "value": "transaction"
+    },
+    {
+      "path": ["events", 2, "source_key"],
+      "value": {"domain": "FITID", "key": "D1"}
+    },
+    {
+      "path": ["events", 2, "description_as_stated"],
+      "value": "Two notebooks"
+    },
+    {
+      "path": ["events", 2, "support"],
+      "value": [
+        {
+          "id": "debit-confirmation",
+          "source_key": {"domain": "FITID", "key": "D1"},
+          "kind": "confirming",
+          "evidence": "INVENTED second rolling download: purchase D1 USD 5.00 debit posted 2026-01-20."
+        }
+      ]
+    },
+    {
+      "path": ["events", 3],
+      "value": {
+        "id": "identical-debit",
+        "event_key": "transaction",
+        "source_key": {"domain": "FITID", "key": "D2"},
+        "date": "2026-01-20",
+        "operation": "quantity",
+        "evidence": "INVENTED purchase D2: two notebooks; USD 5.00 debit, posted 2026-01-20.",
+        "description_as_stated": "Two notebooks",
+        "legs": [
+          {
+            "id": "identical-debit-cash",
+            "position": "cash-A",
+            "commodity": "USD",
+            "amount": "-5",
+            "source_scale": 2,
+            "role": "cash",
+            "weights": [
+              {"kind": "consideration", "amount": "-5", "commodity": "USD"}
+            ]
+          },
+          {
+            "id": "identical-debit-expense",
+            "category": "expense",
+            "commodity": "USD",
+            "amount": "5",
+            "role": "principal",
+            "weights": [
+              {"kind": "expense", "amount": "5", "commodity": "USD"}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

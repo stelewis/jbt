@@ -7,27 +7,52 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
+from jbt.artifacts.attempt import encode_review_report
 from jbt.artifacts.beancount import BeancountProjectionError
-from jbt.artifacts.integrity import decode_document, require_digest
+from jbt.artifacts.integrity import (
+    ArtifactIntegrityError,
+    decode_document,
+    require_digest,
+)
 from jbt.artifacts.reader import PinnedSnapshot, read_pinned, read_snapshot
 from jbt.contracts.primitives import ContractError, require
 from jbt.domain.canonical import encode_json
-from jbt.domain.cash import CashError
 from jbt.domain.errors import DomainError
-from jbt.importers.ofx import OfxError
-from jbt.runtime.build import execute
-from jbt.runtime.execution import ObservedExecution, decode_execution
-from jbt.runtime.inputs import capture_inputs, confined, load_inputs
-from jbt.runtime.network import processing
+from jbt.extraction import ExtractionError
+from jbt.runtime.build import execute, review_document
+from jbt.runtime.execution import ObservedExecution, decode_execution, select_importers
+from jbt.runtime.inputs import capture_inputs, confined, load_inputs, source_importers
+from jbt.runtime.network import NetworkAccessError, processing
 from jbt.runtime.project import document, objects, text
-from jbt.storage.local import Current, publish, read_retained, writer_lock
+from jbt.storage.attempts import retain_report
+from jbt.storage.local import Current, StorageError, publish, read_retained, writer_lock
 
 if TYPE_CHECKING:
     from jbt.runtime.inputs import InputSnapshot
 
 type ReplayFailure = (
-    ContractError | DomainError | CashError | OfxError | BeancountProjectionError
+    ContractError
+    | DomainError
+    | ExtractionError
+    | BeancountProjectionError
+    | ArtifactIntegrityError
+    | StorageError
+    | NetworkAccessError
 )
+
+
+def _failure_facts(failure: ReplayFailure) -> tuple[str, str]:
+    if isinstance(failure, DomainError):
+        return failure.constraint, failure.location
+    if isinstance(failure, BeancountProjectionError):
+        return failure.code, failure.record_id
+    if isinstance(failure, ArtifactIntegrityError):
+        return failure.code.value, failure.filename
+    if isinstance(failure, StorageError):
+        return failure.code.value, failure.location or "storage"
+    if isinstance(failure, NetworkAccessError):
+        return "network_access_denied", "processing"
+    return failure.code, failure.location
 
 
 class BuildReport(TypedDict):
@@ -40,6 +65,22 @@ class BuildReport(TypedDict):
     executed: int
     reused: int
     producer: dict[str, object]
+    attempt_digest: str
+    review_report_digest: str
+
+
+class BuildAttemptError(ContractError):
+    """A failed build with an immutable report independent of publication."""
+
+    def __init__(self, failure: ReplayFailure, attempt: str) -> None:
+        """Preserve the original located constraint without financial values."""
+        code, location = _failure_facts(failure)
+        super().__init__(code, location)
+        self.attempt = attempt
+
+    def __str__(self) -> str:
+        """Make failed attempts directly addressable from safe diagnostics."""
+        return f"{super().__str__()}; attempt={self.attempt}"
 
 
 class VerificationReport(TypedDict):
@@ -72,12 +113,7 @@ class ReplayMismatchError(ContractError):
         observed: ObservedExecution,
     ) -> None:
         """Keep the original failure's location and both observed executions."""
-        code = failure.constraint if isinstance(failure, DomainError) else failure.code
-        location = (
-            failure.record_id
-            if isinstance(failure, BeancountProjectionError)
-            else failure.location
-        )
+        code, location = _failure_facts(failure)
         super().__init__(code, location)
         self.recorded = recorded
         self.observed = observed
@@ -127,6 +163,11 @@ def _financial_outputs(snapshot: PinnedSnapshot) -> dict[str, bytes]:
 
 def _compare(baseline: PinnedSnapshot, candidate: PinnedSnapshot) -> None:
     """Compare financial facts without requiring identical runtime metadata."""
+    require(
+        baseline.outputs.get("model.json") == candidate.outputs.get("model.json"),
+        "model_review_mismatch",
+        "verify",
+    )
     require(
         set(baseline.tables) == set(candidate.tables),
         "table_inventory_mismatch",
@@ -200,34 +241,71 @@ def build(
                 if comparison_baseline is not None
                 else None
             )
-            selected = capture_inputs(
+            captured = capture_inputs(
                 root,
                 project_path=project,
                 execution=execution,
                 baseline=pinned,
                 lock=lock,
             )
+            selected = captured.snapshot
             snapshot, project_document = load_inputs(root, selected.digest)
             require(snapshot == selected, "input_snapshot_changed", "build")
+            execution = decode_execution(read_retained(root, snapshot.execution_digest))
+            review = review_document(snapshot)
+            review["attempt_digest"] = captured.attempt_digest
             staging = confined(root, "staging")
             staging.mkdir(mode=0o700, exist_ok=True)
             with tempfile.TemporaryDirectory(
                 prefix="generation-", dir=staging
             ) as directory:
                 destination = Path(directory)
-                result = execute(
+                try:
+                    result = execute(
+                        root,
+                        snapshot,
+                        project_document,
+                        destination,
+                        execution=execution,
+                        cache=confined(root, "cache") if execution.is_release else None,
+                        baseline=baseline.tables if baseline else None,
+                        review=review,
+                    )
+                    guard.check()
+                except (
+                    ContractError,
+                    DomainError,
+                    ExtractionError,
+                    BeancountProjectionError,
+                    ArtifactIntegrityError,
+                    StorageError,
+                    NetworkAccessError,
+                ) as failure:
+                    code, location = _failure_facts(failure)
+                    review["failure"] = {"code": code, "location": location}
+                    retain_report(
+                        root,
+                        captured.attempt_digest,
+                        encode_review_report(review),
+                        lock=lock,
+                    )
+                    raise BuildAttemptError(
+                        failure, captured.attempt_digest
+                    ) from failure
+                report_digest = retain_report(
                     root,
-                    snapshot,
-                    project_document,
-                    destination,
-                    execution=execution,
-                    cache=confined(root, "cache") if execution.is_release else None,
-                    baseline=baseline.tables if baseline else None,
+                    captured.attempt_digest,
+                    encode_review_report(review),
+                    lock=lock,
                 )
-                guard.check()
-                published = publish(
-                    root, destination, result.snapshot.descriptor_digest, lock=lock
-                )
+                try:
+                    published = publish(
+                        root, destination, result.snapshot.descriptor_digest, lock=lock
+                    )
+                except (StorageError, ArtifactIntegrityError) as failure:
+                    raise BuildAttemptError(
+                        failure, captured.attempt_digest
+                    ) from failure
         return {
             "generation": published.path.relative_to(root).as_posix(),
             "descriptor_digest": published.descriptor_digest,
@@ -236,6 +314,8 @@ def build(
             "executed": len(result.executed),
             "reused": len(result.reused),
             "producer": execution.document()["producer"],
+            "attempt_digest": captured.attempt_digest,
+            "review_report_digest": report_digest,
         }
 
 
@@ -255,13 +335,30 @@ def verify(
             "historical_producer_mismatch_install_recorded_release",
             historical.producer_version,
         )
+        execution, _ = select_importers(
+            execution, source_importers(snapshot.acquisitions)
+        )
+        require(
+            execution.is_release,
+            "historical_importer_mismatch_install_recorded_release",
+            "verify",
+        )
+        require(
+            execution.document()["importers"] == historical.document()["importers"],
+            "historical_importer_mismatch_install_recorded_release",
+            "verify",
+        )
         require(
             baseline.outputs.get("execution.json") == historical.payload
             and baseline.outputs["inputs.json"] == _input_selector(root, snapshot),
             "historical_selection_mismatch",
             "verify",
         )
-        with tempfile.TemporaryDirectory(prefix="jbt-verify-") as directory:
+        staging = confined(root, "staging")
+        staging.mkdir(mode=0o700, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="jbt-verify-", dir=staging
+        ) as directory:
             destination = Path(directory)
             try:
                 result = execute(
@@ -280,8 +377,7 @@ def verify(
             except (
                 ContractError,
                 DomainError,
-                CashError,
-                OfxError,
+                ExtractionError,
                 BeancountProjectionError,
             ) as error:
                 raise ReplayMismatchError(error, historical, execution) from error

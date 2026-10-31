@@ -16,9 +16,7 @@ Use `uv run --locked jbt build --root <synthetic-root> --project project.json` t
 - `uv run --locked ruff format`
 - `uv run --locked ruff check --fix`
 - `uv check --locked`
-- `uv run --locked pytest -q`
-
-Use these commands during normal development before running the full quality gate.
+- `uv run --locked pytest -q <changed-contract-tests> <relevant-workflow-tests>`
 
 ## Contract conformance
 
@@ -28,7 +26,7 @@ Run the pure foundations, schema validators, artifact boundaries, and independen
 uv run --locked pytest -q tests/jbt/domain tests/jbt/contracts tests/jbt/artifacts tests/integration/conformance
 ```
 
-These tests also run in the ordinary pytest suite. Keep synthetic financial expectations independent of the algorithms being tested; the [implemented architecture](../architecture.md) explains the evidence requirements.
+These tests also run in the ordinary pytest suite.
 
 The [contract dependencies](./contract-dependencies.md) include native libraries for real Parquet, SQL/UDF, and Beancount checks. Dependency provisioning and advisory checks may access the network; the financial tests must not fetch files, install extensions, or contact services.
 
@@ -40,7 +38,7 @@ Ordinary tests exercise the editable checkout. Run installed acceptance separate
 uv run --locked pytest -q -m e2e
 ```
 
-This builds a wheel from the working checkout, including uncommitted application edits, and installs it in private temporary tool environments. It exercises acquisition, builds, and historical verification after reinstallation without changing your own tool installation. The explicit marker overrides the default exclusion of `e2e`.
+The installed acceptance builds and installs a wheel once per session in a private temporary tool environment, without changing your own tool installation. The explicit marker overrides the default exclusion of `e2e`.
 
 To test an existing wheel without rebuilding:
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from importlib.metadata import version
 from typing import TYPE_CHECKING
 
+from jbt.artifacts.attempt import write_target
 from jbt.artifacts.execution import ExecutionFacts, InputEdge, Producer
 from jbt.artifacts.integrity import byte_digest, decode_document
 from jbt.artifacts.parquet import Compression, WriterSettings
@@ -16,31 +17,63 @@ from jbt.artifacts.snapshot import (
     SnapshotResult,
     assemble_snapshot,
 )
+from jbt.checks.quantity import Check, CheckKind
 from jbt.contracts.catalog import tabular_schema
 from jbt.contracts.primitives import ContractError, require
 from jbt.contracts.schemas import envelope_schema, validate_document
 from jbt.contracts.validation import validate_tables
 from jbt.domain.canonical import encode_json
-from jbt.domain.cash import CashCheck, source_checks
-from jbt.importers.ofx import OfxContext, extract, to_extraction
-from jbt.runtime.inputs import require_source_size
+from jbt.domain.decisions import (
+    AssignBody,
+    DocumentLinkBody,
+    IdentityBody,
+    LifecycleLinkBody,
+    SplitBody,
+    StatementRevisionBody,
+    TransferBody,
+)
+from jbt.domain.journal import encode_entry, encode_head, entry_digest
+from jbt.extraction import ExtractionContext, decode, extract
+from jbt.model.corrections import Decision, fold
+from jbt.model.decision_merge import fold as merge_fold
+from jbt.model.links import fold as link_fold
+from jbt.model.proposals import proposals
+from jbt.model.rules import enrich
+from jbt.runtime.checks import (
+    projected_account_checks,
+    projected_model_checks,
+    retained_source_checks,
+)
+from jbt.runtime.decisions import selected_decisions
+from jbt.runtime.execution import select_importers
+from jbt.runtime.inputs import require_source_size, source_importers
 from jbt.runtime.outputs import check_document, ledger, summary
-from jbt.runtime.project import Project, SourceSelection, document, objects, text
-from jbt.runtime.record import CASH_DERIVATIONS, ExtractInput, bind_sources, make_record
+from jbt.runtime.project import (
+    Project,
+    SourceSelection,
+    document,
+    objects,
+    strings,
+    text,
+)
+from jbt.runtime.resolution import (
+    QUANTITY_DERIVATIONS,
+    ExtractInput,
+    prepare,
+    project_resolution,
+    rule_evidence,
+)
 from jbt.runtime.stages import Stage, StageResult, StageRunner
+from jbt.runtime.temporal import timezone_provenance
 from jbt.storage.local import read_object, read_retained
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
 
+    from jbt.domain.journal import JournalSelection
     from jbt.runtime.execution import ObservedExecution
     from jbt.runtime.inputs import InputSnapshot
-
-
-REQUIRED_CHECK_KINDS = frozenset(
-    {"source_reconciliation", "model_reconciliation", "occurrence_accounting"}
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +83,24 @@ class BuildResult:
     snapshot: SnapshotResult
     executed: tuple[str, ...]
     reused: tuple[str, ...]
+
+
+def review_document(snapshot: InputSnapshot) -> dict[str, object]:
+    """Name captured financial inputs without including the report's seal."""
+    return {
+        "schema_version": 1,
+        "attempt_digest": snapshot.digest,
+        "selection": {
+            "input_digest": snapshot.digest,
+            "journal_head": decode_document(encode_head(snapshot.journal.head), "head"),
+            "journal_headers": list(snapshot.journal_headers),
+            "journal_bases": list(snapshot.journal_bases),
+            "uncommitted_sequences": list(snapshot.journal_uncommitted),
+        },
+        "model": None,
+        "checks": [],
+        "failure": None,
+    }
 
 
 def _json(value: object) -> bytes:
@@ -63,52 +114,171 @@ def _decode_tables(value: object) -> dict[str, list[dict[str, object]]]:
     }
 
 
-def _findings(
-    project: Project, checks: tuple[CashCheck, ...]
-) -> list[dict[str, object]]:
-    position = project.one("position").decode()
+def _check_policy(project: Project) -> list[str]:
+    configuration = project.configuration_document()
+    selectors = {
+        text(kind, "required_check")
+        for output in objects(configuration["outputs"], "outputs")
+        for kind in strings(output["required_checks"], "required_checks")
+    }
+    require(
+        selectors <= {kind.value for kind in CheckKind}, "check_unsupported", "outputs"
+    )
+    return sorted(selectors)
+
+
+def _findings(project: Project, checks: tuple[Check, ...]) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     for check in checks:
         item = check_document(
             check,
             entity_id=project.entity.value,
-            commodity_id=text(position["commodity_id"], "commodity"),
+            commodity_id=check.commodity.value if check.commodity else None,
         )
-        item["scope"] = [{"table": "accounts", "key": [position["account_id"]]}]
-        item["policy_declaration_ids"] = [project.one("assertion_scope").revision]
+        if check.account is not None:
+            item["scope"] = [{"table": "accounts", "key": [check.account.value]}]
+        item["policy_declaration_ids"] = (
+            sorted(policy.value for policy in check.policies)
+            if check.kind in {CheckKind.COVERAGE, CheckKind.LIFECYCLE}
+            else [
+                d.revision
+                for d in project.declarations
+                if d.kind == "assertion_scope"
+                and (
+                    check.account is None
+                    or d.decode()["account_id"] == check.account.value
+                )
+            ]
+        )
         results.append(item)
     return results
 
 
-def _model_payload(project: Project, extracts: tuple[ExtractInput, ...]) -> bytes:
-    record = make_record(project, extracts)
+def _model_payload(
+    project: Project,
+    extracts: tuple[ExtractInput, ...],
+    decisions: tuple[Decision, ...],
+    journal: JournalSelection,
+    documents: tuple[str, ...],
+) -> bytes:
+    prepared = prepare(project, extracts)
+    merged = merge_fold(
+        prepared.inputs,
+        tuple(
+            decision
+            for decision in decisions
+            if isinstance(decision.body, IdentityBody | StatementRevisionBody)
+        ),
+    )
+    enriched = fold(
+        merged.inputs,
+        enrich(merged.inputs, merged.resolution),
+        tuple(
+            decision
+            for decision in decisions
+            if isinstance(decision.body, AssignBody | SplitBody)
+        ),
+    )
+    linked = link_fold(
+        merged.inputs,
+        enriched.resolution,
+        tuple(
+            decision
+            for decision in decisions
+            if isinstance(
+                decision.body, TransferBody | DocumentLinkBody | LifecycleLinkBody
+            )
+        ),
+        documents,
+    )
+    resolution = linked.resolution
+    for entry in journal.committed_entries:
+        prepared.rows.add(
+            "declarations",
+            {
+                "declaration_id": entry.revision_id.value,
+                "declaration_key": entry.key.value,
+                "declaration_kind": entry.kind.value,
+                "revision_digest": entry.revision_id.value,
+                "document_path": f"journal/entries/{entry.sequence:019d}.json",
+                "document_locator": f"journal:{entry.sequence}",
+                "payload_json": encode_entry(entry).decode().strip(),
+                "valid_from": None,
+                "valid_to": None,
+            },
+            evidence=None,
+        )
+    tables = project_resolution(replace(prepared, inputs=merged.inputs), resolution)
+    review = {
+        "tail": [write_target(target) for target in (*merged.tail, *linked.tail)],
+        "receipts": [
+            {
+                "decision_key": receipt.entry.key.value,
+                "entry_digest": entry_digest(receipt.entry),
+                "expected": write_target(receipt.expected),
+                "candidates": [write_target(target) for target in receipt.candidates],
+                "restore": [
+                    {
+                        "entity_id": reference.entity.value,
+                        "table": reference.table.value,
+                        "key": list(reference.key),
+                        "candidates": [write_target(target) for target in candidates],
+                    }
+                    for reference, candidates in receipt.restore
+                ],
+                "outcome": receipt.evaluation.outcome.value,
+                "expected_digest": receipt.evaluation.guard.expected_digest,
+                "observed_digest": receipt.evaluation.observed_digest,
+            }
+            for receipt in (*merged.receipts, *enriched.receipts, *linked.receipts)
+        ],
+        "rules": rule_evidence(resolution),
+        "counts": {
+            "pending_events": sum(
+                event.state.value == "pending" for event in resolution.events
+            ),
+            "blocked_records": sum(
+                d.status.value == "blocked" for d in resolution.determinations
+            ),
+        },
+        "proposals": [proposal.document() for proposal in proposals(resolution)],
+    }
     return _json(
         {
             "schema_version": 1,
-            "tables": record.tables,
-            "checks": _findings(project, record.checks),
-            "derivations": list(record.derivations),
+            "tables": tables,
+            "findings": [
+                {
+                    "code": f.code.value,
+                    "scope": f.scope.value,
+                    "blocking": f.blocking,
+                    "severity": f.severity,
+                }
+                for f in resolution.findings
+            ],
+            "determinations": [
+                {"record_id": d.identity.value, "status": d.status.value}
+                for d in resolution.determinations
+            ],
+            "derivations": list(QUANTITY_DERIVATIONS),
+            "review": review,
         }
     )
 
 
 def _source_payload(project: Project, extracts: tuple[ExtractInput, ...]) -> bytes:
-    _, opening, statements = bind_sources(project, extracts)
     return _json(
         {
             "schema_version": 1,
-            "checks": _findings(project, source_checks(opening, statements)),
+            "checks": _findings(project, retained_source_checks(project, extracts))
+            if CheckKind.SOURCE in _check_policy(project)
+            else [],
         }
     )
 
 
 def _source_binding(selection: SourceSelection) -> dict[str, object]:
-    return {
-        "source_scope_id": selection.source_scope_id,
-        "source_account_identifier": selection.source_account_identifier,
-        "account_id": selection.account_id,
-        "role": selection.role.value,
-    }
+    return {"accession_id": selection.accession_id}
 
 
 def _selected_bindings(project: Project) -> list[dict[str, object]]:
@@ -120,16 +290,7 @@ def _selected_bindings(project: Project) -> list[dict[str, object]]:
 
 
 def _source_configuration(project: Project) -> dict[str, object]:
-    opening = project.one("authored_fact").decode()
-    return {
-        "account": project.one("account").decode(),
-        "position": project.one("position").decode(),
-        "commodity": project.one("commodity").decode(),
-        "scope": project.one("assertion_scope").decode(),
-        "opening_evidence": opening["evidence"],
-        "opening_event_key": opening["event_key"],
-        "sources": _selected_bindings(project),
-    }
+    return {**_model_configuration(project), "check_policy": _check_policy(project)}
 
 
 def _model_configuration(project: Project) -> dict[str, object]:
@@ -146,6 +307,7 @@ def _model_configuration(project: Project) -> dict[str, object]:
         ],
         "sources": _selected_bindings(project),
         "as_of": project.configuration_document()["as_of"],
+        "configuration": project.configuration_document(),
         "registries": decode_document(project.registries, "registries"),
     }
 
@@ -154,23 +316,25 @@ def _derivations(
     project: Project, identifiers: object
 ) -> tuple[list[dict[str, object]], bytes]:
     supported = {
-        "cash-quantity-v1": (
+        "quantity-v1": (
             ("account", "position", "commodity", "authored_fact", "assertion_scope"),
             "quantity",
         ),
-        "cash-rule-v1": (("rule", "category"), "category"),
+        "enrichment-rule-v1": (("rule", "category"), "none"),
+        "transfer-v1": (("account", "position"), "quantity"),
     }
     if (
         not isinstance(identifiers, list)
         or not identifiers
         or not all(isinstance(item, str) for item in identifiers)
         or len(identifiers) != len(set(identifiers))
-        or not set(identifiers) <= supported.keys() & CASH_DERIVATIONS.keys()
+        or not set(identifiers) <= supported.keys() & QUANTITY_DERIVATIONS.keys()
     ):
         code = "derivation_inventory"
         raise ContractError(code, "build")
     definitions = {
-        identifier: CASH_DERIVATIONS[identifier] for identifier in sorted(identifiers)
+        identifier: QUANTITY_DERIVATIONS[identifier]
+        for identifier in sorted(identifiers)
     }
     entries = [
         {
@@ -193,33 +357,45 @@ def _derivations(
 def _effective_configuration(
     project: Project, checks: list[dict[str, object]]
 ) -> dict[str, object]:
-    configuration = project.configuration_document()
-    outputs: list[dict[str, object]] = []
-    observed = {check["check_kind"] for check in checks}
-    require(observed >= REQUIRED_CHECK_KINDS, "required_check_missing", "outputs")
     require(
         all(
             check["status"] == "pass"
-            if check["check_kind"] != "coverage"
-            else check["status"] in {"pass", "not_evaluable"}
             for check in checks
+            if check["check_kind"] == CheckKind.TRANSFER.value
         ),
-        "required_check_failed",
+        "transfer_conservation_failed",
         "outputs",
     )
+    require(
+        all(
+            check["status"] == "pass"
+            for check in checks
+            if check["check_kind"] == CheckKind.LIFECYCLE.value
+        ),
+        "account_lifecycle_failed",
+        "outputs",
+    )
+    configuration = project.configuration_document()
+    outputs: list[dict[str, object]] = []
+    observed = {check["check_kind"] for check in checks}
     for output in objects(configuration["outputs"], "outputs"):
         require(
             output["sink"] in {"tabular", "beancount", "summary"},
             "sink_unsupported",
             "outputs",
         )
-        selectors = output["required_checks"]
+        selectors = strings(output["required_checks"], "required_checks")
+        sink = text(output["sink"], "sink")
         require(
-            isinstance(selectors, list)
-            and len(selectors) == len(REQUIRED_CHECK_KINDS)
-            and set(selectors) == REQUIRED_CHECK_KINDS,
+            set(selectors) <= {kind.value for kind in CheckKind},
             "required_check_policy",
             "outputs",
+        )
+        require(set(selectors) <= observed, "required_check_missing", sink)
+        require(
+            all(c["status"] == "pass" for c in checks if c["check_kind"] in selectors),
+            "required_check_failed",
+            sink,
         )
         outputs.append(
             {
@@ -227,7 +403,7 @@ def _effective_configuration(
                 "required_checks": sorted(
                     text(check["check_id"], "check")
                     for check in checks
-                    if check["check_kind"] in REQUIRED_CHECK_KINDS
+                    if check["check_kind"] in selectors
                 ),
             }
         )
@@ -256,56 +432,70 @@ def _validate_model(
 
 
 def _bindings(
-    project: Project, tables: dict[str, list[dict[str, object]]]
+    project: Project,
+    snapshot: InputSnapshot,
+    extracts: tuple[ExtractInput, ...],
 ) -> list[dict[str, object]]:
-    position = project.one("position").decode()
     bindings: list[dict[str, object]] = []
-    for scope in sorted({source.source_scope_id for source in project.sources}):
-        sources = tuple(
-            source for source in project.sources if source.source_scope_id == scope
+    stated_accounts = {
+        (
+            text(extract["source_scope_id"], "scope"),
+            text(section["section_id"], "section"),
+        ): section["source_account_identifier"]
+        for selected in extracts
+        for extract in (document(decode_document(selected.payload, "extract")),)
+        for section in objects(
+            document(extract["source_scope"])["sections"], "sections"
         )
-        require(
-            len(
-                {
-                    (source.account_id, source.source_account_identifier)
-                    for source in sources
-                }
-            )
-            == 1,
-            "source_binding_conflict",
-            "bindings",
-        )
-        sections = sorted(
-            {
-                text(row["source_section"], "source_section")
-                for row in tables["source_records"]
-                if row["source_scope_id"] == scope
-            }
-        )
+    }
+    for scope in sorted(
+        {text(item.source_scope_id, "source_scope") for item in snapshot.acquisitions}
+    ):
+        mappings = {}
+        for item in project.declarations:
+            if item.kind != "account":
+                continue
+            account = item.decode()
+            for binding in objects(account["bindings"], "bindings"):
+                if binding["source_scope_id"] != scope:
+                    continue
+                candidates = tuple(
+                    p.decode()
+                    for p in project.declarations
+                    if p.kind == "position"
+                    and p.decode()["account_id"] == account["account_id"]
+                )
+                for position in candidates:
+                    key = (binding["source_section"], position["position_id"])
+                    mappings[key] = {
+                        "source_section": binding["source_section"],
+                        "source_account_identifier": stated_accounts.get(
+                            (scope, binding["source_section"])
+                        ),
+                        "account_id": account["account_id"],
+                        "source_position_key": None,
+                        "position_id": position["position_id"],
+                    }
         bindings.append(
             {
                 "entity_id": project.entity.value,
                 "source_scope_id": scope,
-                "importer_id": "ofx",
-                "account_mappings": [
-                    {
-                        "source_section": section,
-                        "source_account_identifier": sources[
-                            0
-                        ].source_account_identifier,
-                        "account_id": sources[0].account_id,
-                        "source_position_key": None,
-                        "position_id": position["position_id"],
-                    }
-                    for section in sections
-                ],
+                "importer_id": next(
+                    item.importer_id
+                    for item in snapshot.acquisitions
+                    if item.source_scope_id == scope
+                ),
+                "account_mappings": [mappings[key] for key in sorted(mappings)],
             }
         )
     return bindings
 
 
 def _recovery(snapshot: InputSnapshot) -> dict[str, object]:
-    acquisitions = {item.object_digest: item for item in snapshot.acquisitions}
+    acquisitions = {
+        item.object_digest: item
+        for item in (*snapshot.acquisitions, *snapshot.documents)
+    }
     return {
         "vault_objects": [
             {
@@ -326,7 +516,7 @@ def _recovery(snapshot: InputSnapshot) -> dict[str, object]:
                 "source_scope_id": item.source_scope_id,
                 "acquisition_method": "local_copy",
             }
-            for item in snapshot.acquisitions
+            for item in (*snapshot.acquisitions, *snapshot.documents)
         ],
         "authored_history": [
             {
@@ -350,28 +540,47 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
     execution: ObservedExecution,
     cache: Path | None,
     baseline: Mapping[str, Sequence[dict[str, object]]] | None,
+    review: dict[str, object] | None = None,
 ) -> BuildResult:
     """Execute only captured inputs; the caller owns writer exclusion."""
+    require(
+        snapshot.timezone_rules == _json(timezone_provenance()),
+        "historical_timezone_rules_mismatch_install_recorded_release",
+        "build",
+    )
+    execution, importers = select_importers(
+        execution, source_importers(snapshot.acquisitions)
+    )
+    importer_records = {
+        item["importer_id"]: item for item in execution.document()["importers"]
+    }
+    for acquisition in snapshot.acquisitions:
+        require_source_size(
+            acquisition,
+            importers[text(acquisition.importer_id, "importer")].maximum_bytes,
+        )
     facts = ExecutionFacts(
         Producer("jbt", execution.producer_version, execution.producer_digest),
         execution.digest,
     )
     runner = StageRunner(cache if execution.is_release else None, facts)
+    review = review_document(snapshot) if review is None else review
+    decisions = selected_decisions(root, snapshot)
     extracts: list[ExtractInput] = []
     outputs: list[OutputPayload] = []
     unique_extracts: dict[tuple[str, str, str], StageResult] = {}
     for selection, acquisition in zip(
         project.sources, snapshot.acquisitions, strict=True
     ):
-        require_source_size(acquisition)
         data = read_object(root, acquisition)
         importer_id = acquisition.importer_id
         if importer_id is None:
             code = "importer_id_required"
             raise ContractError(code, "build")
+        source_scope = text(acquisition.source_scope_id, "source_scope")
         key = (
             acquisition.object_digest,
-            selection.source_scope_id,
+            source_scope,
             importer_id,
         )
         result = unique_extracts.get(key)
@@ -382,22 +591,24 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
                 byte_digest(
                     _json(
                         {
-                            "source_scope_id": selection.source_scope_id,
+                            "source_scope_id": acquisition.source_scope_id,
                             "importer_id": importer_id,
+                            "interpreter": importer_records[importer_id],
                         }
                     )
                 ),
                 (InputEdge("source", 0, "source", acquisition.object_digest),),
             )
-            context = OfxContext(
-                selection.source_scope_id, acquisition.object_digest, importer_id
+            context = ExtractionContext(
+                source_scope, acquisition.object_digest, importer_id
             )
             result = runner.run(
                 stage,
-                lambda data=data, context=context: _json(
-                    to_extraction(extract(data), context)
+                lambda data=data, context=context: extract(
+                    importers[context.importer_id], data, context
                 ),
             )
+            decode(result.payload, context)
             unique_extracts[key] = result
         extracts.append(ExtractInput(selection, result.payload))
     unique_edges: list[InputEdge] = []
@@ -409,25 +620,27 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
     retained_extracts = tuple(
         sorted(
             extracts,
-            key=lambda item: (
-                item.selection.source_scope_id,
-                item.selection.role.value,
-                item.selection.account_id,
-                item.selection.source_account_identifier,
-                byte_digest(item.payload),
-            ),
+            key=lambda item: (byte_digest(item.payload),),
         )
     )
     execution_project = replace(
         project, sources=tuple(item.selection for item in retained_extracts)
     )
-    bind_sources(execution_project, retained_extracts)
     edges = tuple(unique_edges)
     source_result = runner.run(
         Stage(
-            "checks",
+            "source_checks",
             "checks_artifact_schema",
-            byte_digest(_json(_source_configuration(execution_project))),
+            byte_digest(
+                _json(
+                    {
+                        **_source_configuration(execution_project),
+                        "timezone_rules": decode_document(
+                            snapshot.timezone_rules, "timezone_rules"
+                        ),
+                    }
+                )
+            ),
             edges,
         ),
         lambda: _source_payload(execution_project, retained_extracts),
@@ -436,19 +649,89 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
         Stage(
             "model",
             "model_artifact_schema",
-            byte_digest(_json(_model_configuration(execution_project))),
+            byte_digest(
+                _json(
+                    {
+                        **_model_configuration(execution_project),
+                        "timezone_rules": decode_document(
+                            snapshot.timezone_rules, "timezone_rules"
+                        ),
+                        "journal_headers": list(snapshot.journal_headers),
+                        "journal_bases": list(snapshot.journal_bases),
+                        "documents": sorted(
+                            {item.object_digest for item in snapshot.documents}
+                        ),
+                    }
+                )
+            ),
             edges,
         ),
-        lambda: _model_payload(execution_project, retained_extracts),
+        lambda: _model_payload(
+            execution_project,
+            retained_extracts,
+            decisions,
+            snapshot.journal,
+            tuple(item.object_digest for item in snapshot.documents),
+        ),
     )
     model = document(decode_document(model_result.payload, "model"))
+    review["model"] = model
+    review["checks"] = document(
+        decode_document(source_result.payload, "source-checks")
+    )["checks"]
     tables = _decode_tables(model["tables"])
+    blocking = tuple(f for f in objects(model["findings"], "findings") if f["blocking"])
+    if blocking:
+        raise ContractError(
+            text(blocking[0]["code"], "finding"), text(blocking[0]["scope"], "scope")
+        )
     _validate_model(project, tables, model_result.fingerprint)
+    model_check_result = runner.run(
+        Stage(
+            "model_checks",
+            "checks_artifact_schema",
+            byte_digest(
+                _json(
+                    {
+                        "check_policy": _check_policy(project),
+                        "as_of": project.configuration_document()["as_of"],
+                        "declarations": _model_configuration(project)["declarations"],
+                    }
+                )
+            ),
+            (InputEdge("model", 0, "model", byte_digest(model_result.payload)),),
+        ),
+        lambda: _json(
+            {
+                "schema_version": 1,
+                "checks": _findings(
+                    project,
+                    (
+                        *projected_model_checks(
+                            tables,
+                            frozenset(
+                                CheckKind(k)
+                                for k in _check_policy(project)
+                                if k != CheckKind.SOURCE
+                            ),
+                        ),
+                        *projected_account_checks(project, tables),
+                    ),
+                ),
+            }
+        ),
+    )
     source_document = document(decode_document(source_result.payload, "source-checks"))
     checks: list[dict[str, object]] = [
         dict(item) for item in objects(source_document["checks"], "checks")
     ]
-    checks.extend(dict(item) for item in objects(model["checks"], "checks"))
+    model_check_document = document(
+        decode_document(model_check_result.payload, "model-checks")
+    )
+    checks.extend(
+        dict(item) for item in objects(model_check_document["checks"], "checks")
+    )
+    review["checks"] = checks
     checks.append(
         {
             "check_id": "structure",
@@ -465,7 +748,8 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
         }
     )
     configuration = _effective_configuration(project, checks)
-    outputs.extend(_stage_outputs(source_result, "checks", "source-checks"))
+    outputs.extend(_stage_outputs(source_result, "source_checks", "source-checks"))
+    outputs.extend(_stage_outputs(model_check_result, "model_checks", "model-checks"))
     outputs.extend(_stage_outputs(model_result, "model", "model"))
     configured = {item["sink"] for item in objects(configuration["outputs"], "outputs")}
     if "beancount" in configured:
@@ -491,6 +775,13 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
                         {
                             "as_of": configuration["as_of"],
                             "baseline": snapshot.baseline_digest,
+                            "journal": {
+                                "sequence": snapshot.journal.head.sequence,
+                                "entry_digest": snapshot.journal.head.entry_digest,
+                                "uncommitted_sequences": list(
+                                    snapshot.journal_uncommitted
+                                ),
+                            },
                         }
                     )
                 ),
@@ -505,6 +796,19 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
                 checks=checks,
                 baseline=baseline,
                 baseline_digest=snapshot.baseline_digest,
+                journal_state={
+                    "sequence": snapshot.journal.head.sequence,
+                    "entry_digest": snapshot.journal.head.entry_digest,
+                    "active": [
+                        {
+                            "decision_key": active.entry.key.value,
+                            "kind": active.entry.kind.value,
+                            "logical_position": active.logical_position,
+                        }
+                        for active in snapshot.journal.active_decisions
+                    ],
+                    "uncommitted_sequences": list(snapshot.journal_uncommitted),
+                },
             ),
         )
         outputs.extend(_stage_outputs(result, "summary", "summary"))
@@ -585,8 +889,15 @@ def execute(  # noqa: PLR0913, PLR0915 - explicit replay graph and context
         "effective_declarations": [
             {"entity_id": project.entity.value, "declaration_id": item.revision}
             for item in project.declarations
+        ]
+        + [
+            {
+                "entity_id": entry.entry.entity.value,
+                "declaration_id": entry.entry.revision_id.value,
+            }
+            for entry in snapshot.journal.active_decisions
         ],
-        "bindings": _bindings(project, tables),
+        "bindings": _bindings(project, snapshot, retained_extracts),
         "recovery_set": _recovery(snapshot),
         "inputs": [
             {
@@ -657,6 +968,8 @@ def _stage_outputs(
     schema_id = {
         "extract": "extraction_schema",
         "checks": "checks_artifact_schema",
+        "source_checks": "checks_artifact_schema",
+        "model_checks": "checks_artifact_schema",
         "model": "model_artifact_schema",
         "summary": "summary_artifact_schema",
     }.get(kind)

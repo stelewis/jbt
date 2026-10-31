@@ -8,7 +8,7 @@ from beancount import loader
 from beancount.core import convert, data
 from beancount.core.position import Cost
 from beancount.ops.validation import ValidationError
-from tests.integration.conformance.corpus import FixtureCase, fixture_cases, load_case
+from tests.integration.conformance.corpus import FixtureCase, case_ids, load_case
 
 from jbt.artifacts.beancount import (
     BeancountPolicy,
@@ -175,7 +175,7 @@ def _assert_corpus_totals(
         ) == Decimal(values["principal"])
 
 
-@pytest.mark.parametrize("case_id", [case.case_id for case in fixture_cases()])
+@pytest.mark.parametrize("case_id", case_ids())
 def test_complete_corpus_beancount_handoff(case_id: str) -> None:
     case = load_case(case_id)
     policy = _corpus_policy(case_id)
@@ -685,6 +685,7 @@ def history() -> MutableTables:
                 txn_id=identity,
                 event_kind=kind,
                 event_state="recognized",
+                review_state="reviewed",
                 date_traded=when,
                 date_settled=date(2025, 1, sequence + 3),
                 narration=identity,
@@ -943,6 +944,7 @@ def test_recognized_note_is_a_note_directive_not_a_financial_event(
             txn_id="memo",
             event_kind="note",
             event_state="recognized",
+            review_state="reviewed",
             date_traded=date(2025, 1, 2),
             narration="Invented custody note",
         )
@@ -1211,6 +1213,7 @@ def test_explicit_split_transfer_and_disposal_keep_selected_lot_lineage(
                 txn_id=txn_id,
                 event_kind="corporate_action" if txn_id == "split" else "trade",
                 event_state="recognized",
+                review_state="reviewed",
                 date_traded=date(2025, 1, day),
                 narration=txn_id,
                 payee="Invented",

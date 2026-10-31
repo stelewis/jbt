@@ -11,12 +11,14 @@ from jbt.contracts.primitives import ContractError
 from jbt.domain.canonical import encode_json
 from jbt.importers.ofx import MAX_BYTES
 from jbt.runtime import inputs
+from jbt.runtime.execution import select_importers
 from jbt.runtime.inputs import (
     MAXIMUM_PROJECT_BYTES,
     canonical_root,
     confined,
     read_project_file,
     require_source_size,
+    source_importers,
 )
 from jbt.storage.local import Acquisition, acquire, put_retained, writer_lock
 
@@ -24,6 +26,24 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from jbt.runtime.execution import ObservedExecution
+
+
+def test_cap_equality_and_archive_only_selection() -> None:
+    receipt = Acquisition(
+        "retry",
+        "source",
+        "synthetic",
+        "2026-01-01T00:00:00Z",
+        "evidence",
+        "a" * 64,
+        1,
+        "accession",
+    )
+    require_source_size(receipt, 1)
+    with pytest.raises(ContractError, match="source_size_limit"):
+        require_source_size(replace(receipt, size=2), 1)
+    with pytest.raises(ContractError, match="archive_only_source"):
+        source_importers((replace(receipt, importer_id=None),))
 
 
 @pytest.mark.parametrize(
@@ -115,13 +135,14 @@ def test_capture_and_reload_only_selected_retained_inventory(
     monkeypatch.setattr(inputs, "_bound_acquisitions", lambda *_args: selected)
     monkeypatch.setattr(inputs, "inventory", lambda *_args: None)
     with writer_lock(tmp_path) as lock:
-        snapshot = inputs.capture_inputs(
+        captured = inputs.capture_inputs(
             tmp_path,
             project_path="project.json",
             execution=release_execution,
             baseline=None,
             lock=lock,
         )
+    snapshot = captured.snapshot
     loaded, project = inputs.load_inputs(tmp_path, snapshot.digest)
     assert loaded == snapshot
     assert project.entity.value == project_document["entity_id"]
@@ -144,22 +165,23 @@ def test_oversized_source_binding_fails_before_inventory_reads(
     source.write_bytes(b"x" * (MAX_BYTES + 1))
     acquisitions = []
     with writer_lock(root) as lock:
-        for index, selection in enumerate(project_document["sources"]):
+        for index, _selection in enumerate(project_document["sources"]):
             item = acquire(
                 root,
                 source,
                 retry_key=f"source-{index}",
                 acquired_at="2026-01-01T00:00:00Z",
-                source_scope_id=selection["source_scope_id"],
+                source_scope_id="bank-feed",
                 importer_id="ofx",
                 lock=lock,
             )
-            selection["accession_id"] = item.accession_id
+            project_document["sources"][index] = item.accession_id
             acquisitions.append(item)
         project_payload = encode_json(project_document, integer_strings=False)
         (root / "project.json").write_bytes(project_payload)
         project_digest = put_retained(root, project_payload, lock=lock)
-        execution_digest = put_retained(root, release_execution.payload, lock=lock)
+        selected_execution, _ = select_importers(release_execution, ("ofx",))
+        execution_digest = put_retained(root, selected_execution.payload, lock=lock)
         digest = put_retained(
             root,
             encode_json(
@@ -167,9 +189,21 @@ def test_oversized_source_binding_fails_before_inventory_reads(
                     "schema_version": 1,
                     "project_digest": project_digest,
                     "execution_digest": execution_digest,
+                    "timezone_rules": inputs.timezone_provenance(),
                     "acquisitions": [asdict(item) for item in acquisitions],
+                    "documents": [],
                     "baseline_path": None,
                     "baseline_digest": None,
+                    "journal": {
+                        "head": {
+                            "schema_version": 1,
+                            "sequence": 0,
+                            "entry_digest": None,
+                        },
+                        "headers": [],
+                        "bases": [],
+                        "uncommitted": [],
+                    },
                 },
                 integer_strings=False,
             ),
@@ -192,4 +226,4 @@ def test_oversized_source_binding_fails_before_inventory_reads(
         else:
             with pytest.raises(ContractError, match="source_size_limit"):
                 inputs.load_inputs(root, digest)
-        require_source_size(replace(acquisitions[0], size=MAX_BYTES))
+        require_source_size(replace(acquisitions[0], size=MAX_BYTES), MAX_BYTES)
