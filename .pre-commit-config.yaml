@@ -12,19 +12,19 @@ repos:
       - id: check-added-large-files
 
   - repo: https://github.com/streetsidesoftware/cspell-cli
-    rev: f5c5d72342f35643988a9ffa0705c05bd3ff8383  # frozen: v10.3.0
+    rev: f6467e1f1ebecf5020560405c7b26e01786a43c8  # frozen: v10.4.0
     hooks:
       - id: cspell
         language_version: 22.18.0
         files: ".*\\.md$"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 2aeb804518b4373dbf5adb8dddc5466d9a6e6b21  # frozen: 0.12.19
+    rev: 46787482b9fb2003c56e0f7592e312ef381829d9  # frozen: 0.13.6
     hooks:
       - id: uv-lock
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: a56c0b927e6465d37cae3e97d35d4d18ab2b96cd  # frozen: v0.16.9
+    rev: 25bcf95026b96e2dd3c0aec3090c3d6ef6ca2e6c  # frozen: v0.17.3
     hooks:
       - id: ruff-format
       - id: ruff-check
@@ -33,7 +33,7 @@ repos:
         require_serial: true
 
   - repo: https://github.com/betterleaks/betterleaks
-    rev: 5eab48332cc48565864514e3bc6de89df091a7c4  # frozen: v1.8.1
+    rev: 81aff7a638638aae3a659845d089043e1d8fe9ac  # frozen: v1.9.0
     hooks:
       - id: betterleaks
       - id: betterleaks
@@ -43,13 +43,13 @@ repos:
         stages: [manual]
 
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: 3f5ccc87b27966d9ed21cf5ea8ec2fba38ca65ce  # frozen: v4.19.0
+    rev: f690817de25831a37094ca35af5ada05c909ff1c  # frozen: v4.19.3
     hooks:
       - id: commitizen
         stages: [commit-msg]
 
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: 6972e4c5a7e9f45f05a2f30b668f221f43b770c9  # frozen: v0.0.84
+    rev: 18b2b8bb1b9b90d2d21283756e89b07fc9c747bf  # frozen: v0.0.95
     hooks:
       - id: ty
         args: [--locked]
